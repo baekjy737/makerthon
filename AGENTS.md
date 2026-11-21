@@ -65,7 +65,8 @@ Task 1이 끝나야 대부분의 작업을 시작할 수 있다. 그래서 두 �
 
 main은 GitHub 브랜치 보호가 걸려 있다. 관리자도 직접 푸시할 수 없고 PR로만 병합된다. 강제 푸시와 삭제도 막혀 있다.
 
-- **Task 8(GPT-1) 주의:** 계획에는 "AI 브랜치를 빌드 검증 후 main에 병합"이라고 되어 있다. 하지만 보호 때문에 `git push`나 `git merge`로 main에 직접 넣으면 실패한다. `ai.yml`은 AI 브랜치로 PR을 만들고(`gh pr create`), 빌드가 통과하면 `gh pr merge --squash`로 병합한다. 빌드가 실패하면 병합하지 않고 이슈에 댓글을 단다. 병합 뒤 배포는 `deploy.yml`의 `push(main)` 트리거에 맡긴다.
+- **Task 8(GPT-1) 주의:** 계획에는 "AI 브랜치를 빌드 검증 후 main에 병합"이라고 되어 있다. 하지만 보호 때문에 `git push`나 `git merge`로 main에 직접 넣으면 실패한다. `ai.yml`은 AI 브랜치로 PR을 만들고(`gh pr create`), 빌드가 통과하면 `gh pr merge --squash`로 병합한다. 빌드가 실패하면 병합하지 않고 이슈에 댓글을 단다. 병합은 `GITHUB_TOKEN`(`contents`·`pull-requests`·`actions: write`)으로 한다. GITHUB_TOKEN 병합은 `push(main)` 워크플로를 깨우지 않으므로, 병합 뒤 `gh workflow run deploy.yml --ref main`으로 배포를 직접 시작한다. 다른 앱의 토큰을 내부 엔드포인트로 받아 쓰지 않는다.
+- **Task 7(AGY-1) 주의:** `deploy.yml`에는 계획대로 `push(main)`·`workflow_dispatch`·`workflow_call`을 모두 넣는다. Task 8은 `workflow_dispatch`로 호출한다.
 - 리더도 main에는 PR로만 병합한다.
 
 ## 커밋
