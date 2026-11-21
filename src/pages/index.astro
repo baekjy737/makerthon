@@ -16,12 +16,15 @@ const entries = await getCollection('entries');
 const stats = archiveStats(entries, new Date());
 const pub = sortByDate(publicOnly(entries));
 const last = pub[0]?.data.date;
+const experience = pub.filter(({ data }) => data.type === 'career').map(({ data }) => (
+  [data.title, data.org].filter(Boolean).join(' · ')
+));
 
 const featured = pub.filter((e) => e.data.featured);
 ---
 
 <Base>
-  <Hero profile={profile}>
+  <Hero profile={profile} experience={experience}>
     <StatStrip stats={stats} last={last} />
   </Hero>
 
