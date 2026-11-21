@@ -2,6 +2,7 @@
 import { getCollection, render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import MemoPanel from '../../components/MemoPanel.astro';
+import TypeFilter from '../../components/TypeFilter.astro';
 import { loadProfile } from '../../lib/profile';
 import { issueUrl } from '../../lib/issue';
 import { TYPE_LABELS, TYPE_ORDER } from '../../lib/types';
@@ -15,9 +16,8 @@ import { resolve } from 'node:path';
 const profile = loadProfile();
 const entries = sortByDate(await getCollection('entries'));
 
-const counts = TYPE_ORDER.map((type) => ({ type, label: TYPE_LABELS[type], n: entries.filter((e) => e.data.type === type).length })).filter(
-  (c) => c.n > 0,
-);
+// 필터에는 실제로 있는 종류만
+const types = TYPE_ORDER.filter((type) => entries.some((e) => e.data.type === type));
 
 type Entry = (typeof entries)[number];
 const entryPath = (e: Entry) => e.filePath ?? `content/entries/${e.id}.md`;
@@ -75,7 +75,7 @@ const actions = [
 ---
 
 <Base title="관리" description="모든 기록을 보고 메모를 남기는 관리 페이지" noindex>
-  <div class="manage container">
+  <div class="manage container" data-filter-scope>
     <header class="head">
       <div>
         <p class="eyebrow">MANAGE</p>
@@ -95,16 +95,7 @@ const actions = [
       </div>
     </header>
 
-    <div class="filter" role="group" aria-label="종류로 거르기" data-filter hidden>
-      <button type="button" aria-pressed="true" data-type="all">전체 <span class="n">{entries.length}</span></button>
-      {
-        counts.map((c) => (
-          <button type="button" aria-pressed="false" data-type={c.type}>
-            {c.label} <span class="n">{c.n}</span>
-          </button>
-        ))
-      }
-    </div>
+    {entries.length > 0 && <TypeFilter types={types} />}
 
     {
       entries.length === 0 ? (
@@ -163,23 +154,6 @@ const actions = [
 
   <MemoPanel repo={profile.repo} />
 </Base>
-
-<script>
-  // 종류 필터. JS가 꺼져 있으면 필터 줄은 숨은 채로 전부 보인다.
-  // TODO(Task 4 병합 후): TypeFilter.astro로 교체
-  const bar = document.querySelector<HTMLElement>('[data-filter]');
-  const items = document.querySelectorAll<HTMLLIElement>('[data-list] > li');
-  if (bar) {
-    bar.hidden = false;
-    bar.addEventListener('click', (ev) => {
-      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-type]');
-      if (!btn) return;
-      const type = btn.dataset.type;
-      bar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
-      items.forEach((li) => (li.hidden = type !== 'all' && li.dataset.type !== type));
-    });
-  }
-</script>
 
 <style>
   .manage {
@@ -244,46 +218,6 @@ const actions = [
   }
   .plus {
     margin-right: 0.3em;
-  }
-
-  .filter {
-    display: flex;
-    gap: 0.375rem;
-    overflow-x: auto;
-    padding-bottom: 0.25rem;
-    margin-bottom: 1rem;
-    scrollbar-width: none;
-  }
-  .filter[hidden] {
-    display: none;
-  }
-  .filter button {
-    flex: none;
-    min-height: 2.25rem;
-    padding: 0 0.875rem;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    background: color-mix(in srgb, var(--fg) 6%, transparent);
-    color: var(--muted);
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition:
-      transform 100ms ease-out,
-      background-color 150ms ease-out,
-      color 150ms ease-out;
-  }
-  .filter button:active {
-    transform: scale(0.97);
-  }
-  .filter button[aria-pressed='true'] {
-    background: var(--fg);
-    color: var(--bg);
-  }
-  .filter .n {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    opacity: 0.7;
-    margin-left: 0.25rem;
   }
 
   .list {
@@ -379,7 +313,6 @@ const actions = [
 
   @media (prefers-reduced-motion: reduce) {
     .action:active,
-    .filter button:active,
     .row:active {
       transform: none;
     }
