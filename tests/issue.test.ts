@@ -1,6 +1,11 @@
 import { expect, test } from 'vitest';
 import { issueUrl, MAX_ISSUE_URL } from '../src/lib/issue';
 
+test('recommend 라벨', () => {
+  const u = new URL(issueUrl('a/b', { label: 'recommend', title: '[추천] 다시', body: '' }));
+  expect(u.searchParams.get('labels')).toBe('recommend');
+});
+
 test('라벨·제목·본문 인코딩', () => {
   const u = new URL(issueUrl('a/b', { label: 'memo', title: '[메모] 해커톤', body: '팀장 함' }));
   expect(u.origin).toBe('https://github.com');
