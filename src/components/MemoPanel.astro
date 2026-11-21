@@ -16,32 +16,49 @@ const { repo } = Astro.props;
         <p class="memo-type" data-memo-type></p>
         <h2 id="memo-title" data-memo-title></h2>
       </div>
-      <button type="button" class="memo-close" data-memo-close aria-label="메모 닫기">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-          <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-        </svg>
-      </button>
+      <div class="memo-tools">
+        <button type="button" class="memo-icon" data-memo-full aria-pressed="false" aria-label="전체 화면으로 보기" title="전체 화면으로 보기">
+          <svg class="i-expand" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <svg class="i-shrink" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+        </button>
+        <button type="button" class="memo-icon" data-memo-close aria-label="메모 닫기" title="닫기">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+          </svg>
+        </button>
+      </div>
     </header>
 
-    <section class="memo-files" aria-labelledby="memo-files-label">
-      <p class="memo-label" id="memo-files-label">파일 <span class="memo-count" data-memo-file-count></span></p>
-      <ul class="file-list" data-memo-files></ul>
-    </section>
+    <div class="memo-body">
+      <!-- 전체 화면일 때만 보이는 왼쪽 파일 미리보기 -->
+      <section class="memo-preview" data-memo-preview aria-label="파일 미리보기"></section>
 
-    <label class="memo-label" for="memo-text" data-memo-text-label>메모</label>
-    <textarea
-      id="memo-text"
-      class="memo-text"
-      data-memo-text
-      placeholder="이 파일에 대해 떠오른 내용, 고칠 점, 자소서에 쓸 만한 에피소드 등을 적어 두세요."
-      aria-describedby="memo-status"></textarea>
+      <div class="memo-side">
+        <section class="memo-files" aria-labelledby="memo-files-label">
+          <p class="memo-label" id="memo-files-label">파일 <span class="memo-count" data-memo-file-count></span></p>
+          <ul class="file-list" data-memo-files></ul>
+        </section>
 
-    <p class="memo-status" id="memo-status" data-memo-status aria-live="polite"></p>
-    <p class="memo-warn" data-memo-warn hidden>이 브라우저에는 저장할 수 없어요. 보내기 전에 내용을 복사해 두세요.</p>
+        <label class="memo-label" for="memo-text" data-memo-text-label>메모</label>
+        <textarea
+          id="memo-text"
+          class="memo-text"
+          data-memo-text
+          placeholder="이 파일에 대해 떠오른 내용, 고칠 점, 자소서에 쓸 만한 에피소드 등을 적어 두세요."
+          aria-describedby="memo-status"></textarea>
 
-    <div class="memo-foot">
-      <button type="button" class="memo-send" data-memo-send>메모 모아서 AI에게 보내기</button>
-      <p class="memo-hint">파일별 메모를 이슈 하나로 묶어 GitHub 작성 화면을 새 탭으로 열어요. 제출하면 AI가 정리해서 이 항목에 반영해요.</p>
+        <p class="memo-status" id="memo-status" data-memo-status aria-live="polite"></p>
+        <p class="memo-warn" data-memo-warn hidden>이 브라우저에는 저장할 수 없어요. 보내기 전에 내용을 복사해 두세요.</p>
+
+        <div class="memo-foot">
+          <button type="button" class="memo-send" data-memo-send>메모 모아서 AI에게 보내기</button>
+          <p class="memo-hint">파일별 메모를 이슈 하나로 묶어 GitHub 작성 화면을 새 탭으로 열어요. 제출하면 AI가 정리해서 이 항목에 반영해요.</p>
+        </div>
+      </div>
     </div>
   </div>
 </aside>
@@ -61,6 +78,8 @@ const { repo } = Astro.props;
   const status = panel.querySelector<HTMLElement>('[data-memo-status]')!;
   const warn = panel.querySelector<HTMLElement>('[data-memo-warn]')!;
   const send = panel.querySelector<HTMLButtonElement>('[data-memo-send]')!;
+  const fullBtn = panel.querySelector<HTMLButtonElement>('[data-memo-full]')!;
+  const preview = panel.querySelector<HTMLElement>('[data-memo-preview]')!;
   const repo = panel.dataset.repo!;
 
   // 시크릿 창 등에서는 localStorage 접근 자체가 throw할 수 있다
@@ -90,6 +109,106 @@ const { repo } = Astro.props;
   let open = false;
   let anim: AnimationPlaybackControls | null = null;
   let saveTimer: number | undefined;
+  let full = false;
+  let fullAnim: AnimationPlaybackControls | null = null;
+
+  const viewportWidth = () => document.documentElement.clientWidth || window.innerWidth;
+  const compactWidth = () => Math.min(420, viewportWidth());
+
+  /** 전체 화면 전환. 폭을 스프링으로 늘리고 줄인다(현재 폭에서 시작하므로 도중에 되돌려도 끊기지 않는다). */
+  function setFull(on: boolean, instant = false) {
+    full = on;
+    panel.classList.toggle('is-full', on);
+    fullBtn.setAttribute('aria-pressed', String(on));
+    const label = on ? '작게 보기' : '전체 화면으로 보기';
+    fullBtn.setAttribute('aria-label', label);
+    fullBtn.title = label;
+    fullAnim?.stop();
+    const width = on ? viewportWidth() : compactWidth();
+    fullAnim = animate(panel, { width }, instant || reduce.matches ? { duration: 0 } : SPRING);
+    if (on) {
+      renderPreview();
+      if (!instant && !reduce.matches) animate(preview, { opacity: [0, 1] }, { duration: 0.25, delay: 0.08 });
+    }
+  }
+
+  window.addEventListener('resize', () => {
+    fullAnim?.stop();
+    panel.style.width = `${full ? viewportWidth() : compactWidth()}px`;
+  });
+
+  const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'];
+  const extOf = (ref: string) => (ref.includes('.') ? ref.split('.').pop()!.toLowerCase() : '');
+
+  /** 미리보기를 지원하지 않는 파일·외부 링크용 카드 */
+  function previewCard(f: MemoFile, message: string) {
+    const card = document.createElement('div');
+    card.className = 'pv-card';
+    const badge = document.createElement('span');
+    badge.className = 'pv-card-badge';
+    badge.textContent = badgeOf(f);
+    const name = document.createElement('p');
+    name.className = 'pv-card-name';
+    name.textContent = f.label;
+    const ref = document.createElement('p');
+    ref.className = 'pv-card-ref';
+    ref.textContent = f.ref;
+    const msg = document.createElement('p');
+    msg.className = 'pv-card-msg';
+    msg.textContent = message;
+    card.append(badge, name, ref, msg);
+    if (f.href) {
+      const a = document.createElement('a');
+      a.className = 'pv-card-open';
+      a.href = f.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = '새 탭에서 열기 ↗';
+      card.append(a);
+    }
+    return card;
+  }
+
+  /** 왼쪽 미리보기. 전체 화면일 때만 그린다. 같은 파일이면 다시 그리지 않는다(PDF가 처음으로 돌아가지 않게). */
+  function renderPreview() {
+    if (!full || !current) return;
+    const f = current.files[current.selected];
+    const key = `${current.id}|${f.ref}`;
+    if (preview.dataset.key === key) return;
+    preview.dataset.key = key;
+    preview.replaceChildren();
+
+    if (f.kind === 'entry') {
+      const tpl = document.querySelector<HTMLTemplateElement>(`template[data-entry-preview="${CSS.escape(current.id)}"]`);
+      if (tpl) {
+        const doc = document.createElement('article');
+        doc.className = 'pv-doc';
+        doc.append(tpl.content.cloneNode(true));
+        preview.append(doc);
+      } else {
+        preview.append(previewCard(f, '본문을 불러오지 못했어요.'));
+      }
+    } else if (f.kind === 'file' && f.href && IMAGE_EXT.includes(extOf(f.ref))) {
+      const wrap = document.createElement('div');
+      wrap.className = 'pv-media';
+      const img = document.createElement('img');
+      img.src = f.href;
+      img.alt = f.label;
+      img.decoding = 'async';
+      wrap.append(img);
+      preview.append(wrap);
+    } else if (f.kind === 'file' && f.href && extOf(f.ref) === 'pdf') {
+      const frame = document.createElement('iframe');
+      frame.className = 'pv-frame';
+      frame.src = f.href;
+      frame.title = `${f.label} 미리보기`;
+      preview.append(frame);
+    } else if (f.kind === 'link') {
+      preview.append(previewCard(f, '외부 사이트는 여기서 미리 볼 수 없어요. 새 탭에서 열어 확인해 주세요.'));
+    } else {
+      preview.append(previewCard(f, '이 형식은 미리 볼 수 없어요.'));
+    }
+  }
 
   // 닫힌 위치를 motion에 먼저 알려 두면, 이후 애니메이션은 항상 현재 화면 위치에서 시작한다(중간에 방향 전환 가능).
   animate(panel, { x: '100%', opacity: 1 }, { duration: 0 });
@@ -182,6 +301,7 @@ const { repo } = Astro.props;
     textLabel.textContent = `${f.label} 메모`;
     fileList.querySelectorAll<HTMLButtonElement>('.file').forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
     status.textContent = '';
+    renderPreview();
     if (focus) text.focus({ preventScroll: true });
   }
 
@@ -248,6 +368,8 @@ const { repo } = Astro.props;
       if (!open) {
         panel.classList.remove('is-open');
         animate(panel, { x: '100%', opacity: 1 }, { duration: 0 });
+        // 다음에 열 때는 다시 작은 패널로
+        if (full) setFull(false, true);
       }
     });
     trigger?.focus({ preventScroll: true });
@@ -270,12 +392,16 @@ const { repo } = Astro.props;
   });
 
   panel.querySelector('[data-memo-close]')!.addEventListener('click', hide);
+  fullBtn.addEventListener('click', () => setFull(!full));
 
+  // Esc: 전체 화면이면 먼저 작은 패널로, 아니면 닫기
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && open) {
-      ev.preventDefault();
-      hide();
-    }
+    if (ev.key !== 'Escape' || !open) return;
+    ev.preventDefault();
+    if (full) {
+      setFull(false);
+      fullBtn.focus({ preventScroll: true });
+    } else hide();
   });
 
   text.addEventListener('input', () => {
@@ -357,13 +483,13 @@ const { repo } = Astro.props;
     line-height: 1.35;
     letter-spacing: -0.01em;
   }
-  .memo-close {
+  .memo-icon {
     flex: none;
     display: grid;
     place-items: center;
     width: 2.5rem;
     height: 2.5rem;
-    margin: -0.375rem -0.5rem 0 0;
+    margin: 0;
     border: 0;
     border-radius: 50%;
     background: color-mix(in srgb, var(--fg) 8%, transparent);
@@ -372,10 +498,10 @@ const { repo } = Astro.props;
       transform 100ms ease-out,
       background-color 150ms ease-out;
   }
-  .memo-close:hover {
+  .memo-icon:hover {
     background: color-mix(in srgb, var(--fg) 14%, transparent);
   }
-  .memo-close:active {
+  .memo-icon:active {
     transform: scale(0.94);
   }
 
@@ -554,6 +680,190 @@ const { repo } = Astro.props;
     line-height: 1.5;
   }
 
+  .memo-tools {
+    flex: none;
+    display: flex;
+    gap: 0.375rem;
+    margin: -0.375rem -0.5rem 0 0;
+  }
+  .memo-icon .i-shrink,
+  .memo-icon[aria-pressed='true'] .i-expand {
+    display: none;
+  }
+  .memo-icon[aria-pressed='true'] .i-shrink {
+    display: block;
+  }
+
+  /* 본문: 작은 패널에서는 오른쪽(메모) 영역만, 전체 화면이면 왼쪽 미리보기 + 오른쪽 메모 */
+  .memo-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .memo-side {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .memo-preview {
+    display: none;
+  }
+
+  .memo.is-full .memo-inner {
+    padding-inline: clamp(1.25rem, 3vw, 2.5rem);
+    background: color-mix(in srgb, var(--bg) 94%, transparent);
+    border-left: 0;
+  }
+  .memo.is-full .memo-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(320px, 32vw, 420px);
+    gap: clamp(1rem, 2.5vw, 2rem);
+  }
+  .memo.is-full .memo-preview {
+    display: block;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
+    border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .memo.is-full .memo-side {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .memo.is-full .file-list {
+    max-height: 40vh;
+  }
+
+  /* 미리보기 내용(스크립트가 만든 요소라 :global) */
+  .memo-preview :global(.pv-doc) {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: clamp(1.5rem, 4vw, 3rem);
+    line-height: 1.8;
+  }
+  .memo-preview :global(.pv-doc h1) {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
+  }
+  .memo-preview :global(.pv-meta) {
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+  }
+  .memo-preview :global(.pv-summary) {
+    color: var(--muted);
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  .memo-preview :global(.pv-doc h2) {
+    font-size: 1.25rem;
+    margin: 2rem 0 0.75rem;
+  }
+  .memo-preview :global(.pv-doc h3) {
+    font-size: 1.0625rem;
+    margin: 1.5rem 0 0.5rem;
+  }
+  .memo-preview :global(.pv-doc p),
+  .memo-preview :global(.pv-doc ul),
+  .memo-preview :global(.pv-doc ol) {
+    margin: 0 0 1rem;
+  }
+  .memo-preview :global(.pv-doc a) {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  .memo-preview :global(.pv-doc code) {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .memo-preview :global(.pv-media) {
+    display: grid;
+    place-items: center;
+    min-height: 100%;
+    padding: 1.5rem;
+  }
+  .memo-preview :global(.pv-media img) {
+    max-height: calc(100vh - 10rem);
+    object-fit: contain;
+    border-radius: 8px;
+  }
+  .memo-preview :global(.pv-frame) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff;
+  }
+  .memo-preview :global(.pv-card) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 100%;
+    padding: 2rem;
+    text-align: center;
+  }
+  .memo-preview :global(.pv-card-badge) {
+    padding: 0.25rem 0.625rem;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--fg) 10%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
+  .memo-preview :global(.pv-card-name) {
+    font-family: var(--font-ko-bold);
+    font-size: 1.25rem;
+  }
+  .memo-preview :global(.pv-card-ref) {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--muted);
+    word-break: break-all;
+    max-width: 32rem;
+  }
+  .memo-preview :global(.pv-card-msg) {
+    color: var(--muted);
+    font-size: 0.9375rem;
+    margin-top: 0.75rem;
+  }
+  .memo-preview :global(.pv-card-open) {
+    margin-top: 1rem;
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0 1.25rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--fg) 20%, transparent);
+  }
+  .memo-preview :global(.pv-card-open:hover) {
+    border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+  }
+
+  /* 좁은 화면의 전체 화면: 미리보기 위, 메모 아래 */
+  @media (max-width: 760px) {
+    .memo.is-full .memo-body {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(12rem, 42vh) minmax(0, 1fr);
+    }
+    .memo.is-full .file-list {
+      max-height: 9rem;
+    }
+  }
+
   @media (prefers-reduced-transparency: reduce) {
     .memo-inner {
       background: var(--bg);
@@ -570,7 +880,7 @@ const { repo } = Astro.props;
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .memo-close:active,
+    .memo-icon:active,
     .memo-send:active,
     .file-list :global(.file:active) {
       transform: none;
