@@ -1,0 +1,20 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import Hero from '../components/Hero.astro';
+import StatStrip from '../components/StatStrip.astro';
+import { publicOnly, sortByDate } from '../lib/entries';
+import { loadProfile } from '../lib/profile';
+import { archiveStats } from '../lib/stats';
+
+const profile = loadProfile();
+const entries = await getCollection('entries');
+const stats = archiveStats(entries, new Date());
+const last = sortByDate(publicOnly(entries))[0]?.data.date;
+---
+
+<Base>
+  <Hero profile={profile}>
+    <StatStrip stats={stats} last={last} />
+  </Hero>
+</Base>
