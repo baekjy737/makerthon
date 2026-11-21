@@ -1,0 +1,39 @@
+# 내 정보·색·폰트. 학생이 고치는 유일한 설정 파일이에요.
+# 아래는 샘플이에요. 본인 정보로 바꿔 주세요.
+
+name:
+  ko: 홍길동            # 한글 이름 (이력서·사이트 제목)
+  line1: GILDONG        # 히어로 첫 줄 (이름)
+  line2: HONG           # 둘째 줄 (성, 톤을 낮춰 보여 줌)
+  line3: "ROBOTICS × AI" # 셋째 줄 (분야, ×는 포인트색)
+
+monogram: GD.26         # 왼쪽 위 로고. 사진이 없으면 히어로에 크게 나와요
+
+# 소개 한두 문장. **굵게** 감싼 구절만 흰색 굵은 글씨로 강조돼요.
+intro: DGIST에서 **로봇과 AI**를 공부하며, 만든 것을 **기록으로 남기는** 학생입니다.
+
+# photo: profile.jpg    # public/ 안의 사진 경로 (없으면 모노그램)
+# email: me@example.com
+
+links: []
+#  - label: GitHub
+#    url: https://github.com/내아이디
+
+repo: baekjy737/makerthon   # 내 저장소 owner/name (이슈 만들기 버튼에 쓰여요)
+
+# 색. 빼먹은 값은 기본값(다크 배경 + 파란 포인트)을 써요.
+theme:
+  bg: "#0b0b0c"       # 배경
+  fg: "#f2f2f0"       # 글자
+  muted: "#8a8a8f"    # 보조 글자
+  accent: "#3b82f6"   # 포인트색
+
+# 폰트. 바꾸지 않으면 영문 Anton + 한글 나눔스퀘어 네오.
+# fonts:
+#   display:
+#     family: Anton
+#     css: https://fonts.googleapis.com/css2?family=Anton&display=swap
+#   ko:
+#     family: NanumSquareNeo
+#     boldFamily: NanumSquareNeoBold
+#     css: https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css

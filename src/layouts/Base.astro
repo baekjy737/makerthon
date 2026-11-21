@@ -1,0 +1,50 @@
+---
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+import { loadProfile } from '../lib/profile';
+import { fontCss, themeCss } from '../lib/theme';
+import { withBase } from '../lib/url';
+
+interface Props {
+  /** 페이지 제목. 없으면 "<이름> 아카이브" */
+  title?: string;
+  description?: string;
+  /** 검색엔진에 안 나오게 (관리 페이지 등) */
+  noindex?: boolean;
+}
+
+const profile = loadProfile();
+const {
+  title,
+  description = profile.intro.replace(/\*\*/g, ''),
+  noindex = false,
+} = Astro.props;
+const fullTitle = title ? `${title} · ${profile.name.ko}` : `${profile.name.ko} 아카이브`;
+const rootCss = themeCss(profile.theme) + fontCss(profile.fonts);
+---
+
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta name="theme-color" content={profile.theme.bg} />
+    <link rel="manifest" href={withBase('manifest.webmanifest')} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href={profile.fonts.display.css} />
+    <link rel="stylesheet" href={profile.fonts.ko.css} />
+    <style is:inline set:html={rootCss}></style>
+    <slot name="head" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+    <Nav monogram={profile.monogram} />
+    <main id="main">
+      <slot />
+    </main>
+  </body>
+</html>

@@ -1,0 +1,170 @@
+---
+import { withBase } from '../lib/url';
+
+interface Props {
+  monogram: string;
+}
+
+const { monogram } = Astro.props;
+
+const items = [
+  { href: '/archive', label: 'ARCHIVE' },
+  { href: '/portfolio', label: 'PORTFOLIO' },
+  { href: '/resume', label: 'RESUME' },
+  { href: '/apply', label: 'APPLY' },
+  { href: '/manage', label: '관리' },
+];
+
+const here = Astro.url.pathname.replace(/\/$/, '');
+const isCurrent = (href: string) => {
+  const target = withBase(href).replace(/\/$/, '');
+  return here === target || here.startsWith(target + '/');
+};
+---
+
+<header class="nav">
+  <div class="nav-inner">
+    <a class="mono" href={withBase('/')} aria-label="처음으로">{monogram}</a>
+    <nav aria-label="주요 메뉴">
+      <ul>
+        {
+          items.map((it) => (
+            <li>
+              <a href={withBase(it.href)} aria-current={isCurrent(it.href) ? 'page' : undefined}>
+                {it.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    isolation: isolate;
+  }
+
+  /* 반투명 블러 재질. 아래쪽은 선 대신 마스크로 흐려지며 내용과 만난다 */
+  .nav::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 -16px 0;
+    z-index: -1;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+    pointer-events: none;
+  }
+
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    width: var(--content);
+    margin-inline: auto;
+    height: 3.5rem;
+  }
+
+  a {
+    font-family: var(--font-mono);
+    font-size: 0.75rem; /* 12px */
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1;
+    color: var(--muted);
+    white-space: nowrap;
+    transition:
+      color 150ms ease-out,
+      transform 100ms ease-out;
+  }
+
+  a:hover,
+  a[aria-current='page'] {
+    color: var(--fg);
+  }
+
+  a[aria-current='page'] {
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 6px;
+  }
+
+  /* 누르는 순간 바로 반응 */
+  a:active {
+    transform: scale(0.96);
+  }
+
+  .mono {
+    color: var(--fg);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    flex: none;
+  }
+
+  nav {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  ul {
+    display: flex;
+    gap: clamp(1rem, 2.5vw, 2rem);
+    margin: 0;
+    padding: 0.5rem 0;
+    list-style: none;
+  }
+
+  @media (max-width: 480px) {
+    .nav-inner {
+      gap: 1rem;
+    }
+    ul {
+      gap: 0.875rem;
+    }
+    a {
+      letter-spacing: 0.08em;
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .nav::before {
+      background: var(--bg);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .nav::before {
+      inset: 0;
+      background: var(--bg);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      -webkit-mask-image: none;
+      mask-image: none;
+      border-bottom: 1px solid var(--fg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    a {
+      transition: color 150ms ease-out;
+    }
+    a:active {
+      transform: none;
+    }
+  }
+</style>
