@@ -14,15 +14,18 @@ DGIST 학생의 활동을 한국어 Markdown으로 기록한다.
 | --- | --- | --- |
 | `content/entries/<slug>.md` | `type`, `title`, `date`, `summary` | `end`, `org`, `role`, `tags: []`, `metrics: []`, `featured: false`, `public: true`, `links: []`, `attachments: []`, `topics: []`, `course_code` |
 | `content/applications/<slug>/index.md` | `company`, `position`, `created`, `requirements`, `matches`, `gaps` | `url`, `deadline` |
-| `content/applications/<slug>/essay-<n>.md` | `question` | `limit`(숫자), `entries: []` |
-| `content/next/<slug>.md` | `topic`, `created`, `from`, `learned`, `next` | `resources: []`, `questions: []` |
+| `content/applications/<slug>/essay-<n>.md` | `question` | `limit`(숫자), `entries: []`, `materials: []`, `checks: []` |
+| `content/next/<slug>.md` | `topic`, `created`, `from`, `learned`, `next` | `resources: []`, `questions: []`, `actions: []` |
 | `content/matches/<slug>.md` | `kind`, `target`, `created`, `score`, `reason`, `from` | `check: []`, `sources: []` |
+| `content/openings/<slug>.md` | `kind`, `org`, `title`, `url`, `created` | `verified: false`, `target`, `eligibility`, `start`, `deadline`, `tags: []`, `lab` |
 
 - `type`은 `project`, `research`, `award`, `activity`, `career`, `education`, `certificate`, `etc`, `course`(수강 과목), `paper`(읽은 논문), `study`(공부자료·발표) 중 하나다. `summary`는 80자 이내 한 줄이다. 공부 기록에는 자료에서 확인한 내용을 `## 배운 점`과 `## 남은 질문` 아래에 쓴다. 주제는 `topics` 문자열 배열에, 확인된 수강 과목 번호는 `course_code`에 쓴다.
 - `date`, `end`, `created`, `deadline`은 날짜로 읽을 수 있어야 한다. 활동 시점이 연월까지만 확인되면 `date: "YYYY-MM"`로 쓰고 본문에도 연월까지만 쓴다. `created`는 해당 지원 기록이나 추천을 처음 작성한 날이다.
 - `title`, `org`, `role`, `company`, `position`, `question`은 문자열이다. `tags`, `metrics`, `requirements`, `gaps`는 문자열 배열이다. `links`의 각 원소는 `{label, url}`이며 `url`에는 실제 주소를 쓴다.
 - `matches`는 `{entry, score, reason}` 배열이다. `score`는 0~100 사이 숫자다. `entry`와 자소서의 `entries`에는 기존 항목 ID(`content/entries/` 아래의 경로에서 `.md`를 뺀 값)를 쓴다.
-- 추천의 `from`에는 근거가 된 공개 항목 ID를 1개 이상 쓴다. `learned`, `next`, `questions`, `check`는 문자열 배열이며 `next`에는 다음에 공부할 개념이 1개 이상 있어야 한다. `resources`의 원소는 `{label, url?, course?}`, `sources`의 원소는 `{label, url}`이다. `kind`는 `lab`, `company`, `intern` 중 하나이며 `score`는 0~100 사이 숫자다.
+- 추천의 `from`에는 근거가 된 공개 항목 ID를 1개 이상 쓴다. `learned`, `next`, `questions`, `check`는 문자열 배열이며 `next`에는 다음에 공부할 개념이 1개 이상 있어야 한다. `resources`의 원소는 `{label, url?, course?}`, `sources`의 원소는 `{label, url}`이다. `kind`는 `lab`, `company`, `intern` 중 하나이며 `score`는 0~100 사이 숫자다. 다음 공부의 `actions`는 바로 해볼 공부·탐구를 구체적인 행동 하나씩 적은 문자열 배열이다.
+- 자소서의 `materials`는 문항에 쓸 소재 2~3개의 `{entry, reason, draft}` 배열이다. `entry`는 공개 항목 ID, `reason`은 추천 이유 한 문장, `draft`는 그 소재로 쓴 초안이며 `limit`이 있으면 그 안에서 쓴다. 본문에는 가장 추천하는 소재의 초안을 쓴다. 기록에 없는 개인 기여·성과는 지어내지 않고 `checks`(문자열 배열)에 확인할 항목으로 적는다.
+- 공고(`content/openings/`)의 `kind`는 `lab-intern`(대학원 연구실 인턴), `undergrad-research`(연구과제 학부연구생), `company-intern`(기업 인턴), `company-job`(기업 채용) 중 하나다. `url`은 원본 공고 주소다. 원문에서 접수 기간을 확인했을 때만 `verified: true`를 쓰고, 확인하지 못한 `target`(모집 대상)·`eligibility`(자격 요건)·`start`·`deadline`은 생략한다. `data/labs.json`의 연구실과 같은 곳이면 `lab`에 그 `id`를 쓴다. 본문은 공고 요약이다.
 - 새 slug는 `YYYY-MM-<영문-kebab>`로 작성한다. 활동은 활동 연월, 지원 건은 작성 연월과 회사·직무를 쓴다. 기존 파일을 보강할 때는 기존 ID를 유지한다. 이미지·PDF 첨부는 `public/archive/<항목 slug>/`에 두고, `attachments`에는 `archive/<항목 slug>/<파일명>`처럼 `public/` 기준 상대 경로를 적는다.
 
 ## 기록과 검증

@@ -14,6 +14,11 @@ export const ENTRY_TYPES = [
 
 export type EntryType = (typeof ENTRY_TYPES)[number];
 
+/** 모집 공고 유형 (APPLY 탭 순서). 라벨은 openings.ts의 OPENING_LABELS */
+export const OPENING_KINDS = ['lab-intern', 'undergrad-research', 'company-intern', 'company-job'] as const;
+
+export type OpeningKind = (typeof OPENING_KINDS)[number];
+
 /** 공부 기록 종류. 이력서(TYPE_ORDER)에는 들어가지 않는다. */
 export const STUDY_TYPES = ['course', 'paper', 'study'] as const;
 
