@@ -1,0 +1,22 @@
+---
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import ResumeDocument from '../../components/ResumeDocument.astro';
+import { tailoredEntries } from '../../lib/resume';
+
+export async function getStaticPaths() {
+  return (await getCollection('applications')).map((application) => ({
+    params: { app: application.id },
+    props: { application },
+  }));
+}
+
+interface Props {
+  application: CollectionEntry<'applications'>;
+}
+
+const { application } = Astro.props;
+const entries = tailoredEntries(await getCollection('entries'), application.data.matches);
+---
+
+<ResumeDocument entries={entries} application={application} />

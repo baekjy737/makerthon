@@ -1,0 +1,88 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { withBase } from '../../lib/url';
+
+const applications = await getCollection('applications');
+applications.sort((a, b) => b.data.created.getTime() - a.data.created.getTime());
+---
+
+<Base title="지원">
+  <section class="container applications" aria-labelledby="applications-title">
+    <h1 id="applications-title">지원</h1>
+    {applications.length ? (
+      <ul>
+        {applications.map(({ id, data }) => {
+          const deadline = data.deadline?.toISOString().slice(0, 10);
+          return (
+            <li>
+              <a href={withBase(`apply/${id}/`)}>
+                <div>
+                  <p class="company">{data.company}</p>
+                  <h2>{data.position}</h2>
+                </div>
+                <p class="deadline">
+                  {deadline ? <>마감 <time datetime={deadline}>{deadline}</time></> : '마감일 미정'}
+                  <span aria-hidden="true"> →</span>
+                </p>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    ) : <p>아직 등록된 지원 건이 없습니다.</p>}
+  </section>
+</Base>
+
+<style>
+  .applications {
+    max-width: 64rem;
+    padding-block: clamp(2rem, 6vw, 5rem);
+  }
+
+  h1 {
+    margin-bottom: clamp(1.75rem, 4vw, 3rem);
+    font-size: clamp(2.75rem, 8vw, 5rem);
+    letter-spacing: -0.045em;
+  }
+
+  ul {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  a {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 2rem;
+    padding: clamp(1.1rem, 3vw, 1.75rem);
+    border: 1px solid color-mix(in srgb, var(--muted) 50%, transparent);
+    border-radius: 0.75rem;
+  }
+
+  a:hover,
+  a:active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  }
+
+  h2 {
+    margin-top: 0.25rem;
+    font-size: clamp(1.2rem, 3vw, 1.65rem);
+  }
+
+  .company,
+  .deadline {
+    color: var(--muted);
+  }
+
+  .deadline span {
+    margin-left: 0.5rem;
+    color: var(--fg);
+  }
+</style>

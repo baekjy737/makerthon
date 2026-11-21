@@ -1,0 +1,178 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import { loadProfile } from '../lib/profile';
+import { resumeSections } from '../lib/resume';
+import { withBase } from '../lib/url';
+import '../styles/print.css';
+
+interface Props {
+  entries: CollectionEntry<'entries'>[];
+  application?: CollectionEntry<'applications'>;
+}
+
+const { entries, application } = Astro.props;
+const profile = loadProfile();
+const sections = resumeSections(entries);
+const applicationLabel = application
+  ? `${application.data.company} · ${application.data.position} 지원용`
+  : undefined;
+const month = (date: Date) => date.toISOString().slice(0, 7).replace('-', '.');
+---
+
+<Base title={applicationLabel ?? '이력서'}>
+  <article class="container resume-document">
+    <header class="resume-heading">
+      <div class="resume-toolbar print-hide">
+        {application ? (
+          <a href={withBase(`apply/${application.id}/`)}>← 지원 분석</a>
+        ) : <span>이력서</span>}
+        <button type="button" data-print-resume hidden>PDF로 저장</button>
+      </div>
+      <h1>{profile.name.ko}</h1>
+      {applicationLabel && <p class="application-label">{applicationLabel}</p>}
+      {(profile.email || profile.links.length > 0) && (
+        <ul class="contact-list" aria-label="연락처와 링크">
+          {profile.email && <li><a href={`mailto:${profile.email}`}>{profile.email}</a></li>}
+          {profile.links.map(({ label, url }) => <li><a href={withBase(url)}>{label}</a></li>)}
+        </ul>
+      )}
+    </header>
+    {sections.length ? sections.map(({ label, type, items }) => (
+      <section class="resume-section" aria-labelledby={`resume-${type}`}>
+        <h2 id={`resume-${type}`}>{label}</h2>
+        <ul>
+          {items.map(({ data }) => (
+            <li class="resume-entry">
+              <p class="entry-period">
+                <time datetime={data.date.toISOString().slice(0, 10)}>{month(data.date)}</time>
+                {data.end && <>
+                  <span aria-hidden="true"> – </span><span class="visually-hidden">부터 </span>
+                  <time datetime={data.end.toISOString().slice(0, 10)}>{month(data.end)}</time>
+                </>}
+              </p>
+              <h3>{data.title}{data.org && <span> · {data.org}</span>}</h3>
+              <p class="entry-summary">{data.summary}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )) : <p>이력서에 표시할 공개 기록이 없습니다.</p>}
+  </article>
+</Base>
+
+<script>
+  const printButton = document.querySelector<HTMLButtonElement>('[data-print-resume]');
+  if (printButton) {
+    printButton.hidden = false;
+    printButton.addEventListener('click', () => window.print());
+  }
+</script>
+
+<style>
+  .resume-document {
+    max-width: 64rem;
+    padding-block: clamp(2rem, 6vw, 5rem);
+  }
+
+  .resume-heading {
+    margin-bottom: clamp(2.75rem, 7vw, 5rem);
+  }
+
+  .resume-toolbar {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    color: var(--muted);
+  }
+
+  button {
+    min-height: 2.75rem;
+    padding-inline: 0.9rem;
+    border: 1px solid var(--accent);
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+  }
+
+  button:hover,
+  button:active {
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  }
+
+  h1 {
+    font-size: clamp(2.75rem, 8vw, 5.5rem);
+    letter-spacing: -0.045em;
+  }
+
+  .application-label {
+    margin-top: 0.75rem;
+    font-size: 1.2rem;
+  }
+
+  .contact-list,
+  .resume-section ul {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  .contact-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+    margin-top: 1rem;
+  }
+
+  a {
+    text-underline-offset: 0.22em;
+  }
+
+  .contact-list a,
+  a:hover {
+    text-decoration: underline;
+  }
+
+  .resume-section + .resume-section {
+    margin-top: 2.25rem;
+  }
+
+  h2 {
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--muted) 46%, transparent);
+    font-size: 1.35rem;
+  }
+
+  .resume-entry {
+    display: grid;
+    grid-template-columns: minmax(8rem, 0.85fr) minmax(0, 1.2fr) minmax(0, 1.5fr);
+    align-items: baseline;
+    gap: 0.5rem 1.5rem;
+    padding-block: 0.8rem;
+  }
+
+  .entry-period,
+  h3 span {
+    color: var(--muted);
+  }
+
+  .entry-period {
+    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  h3 {
+    font-size: 1rem;
+  }
+
+  @media screen and (max-width: 42rem) {
+    .resume-entry {
+      grid-template-columns: 1fr;
+      gap: 0.25rem;
+    }
+  }
+</style>
