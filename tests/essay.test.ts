@@ -115,7 +115,7 @@ describe('refineBody', () => {
 
   test('essay.yml 항목 순서(지원처 → 문항 → 글자 수) 다음에 요청 내용', () => {
     const body = refineBody(base);
-    const order = ['### 지원처', '### 자소서 문항', '### 글자 수 제한', '### 다듬기 요청'].map((h) => body.indexOf(h));
+    const order = ['### 지원처', '### 지원서 양식 파일(PDF·이미지) 또는 문항 원문', '### 공통 글자 수 제한 (선택)', '### 다듬기 요청'].map((h) => body.indexOf(h));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(body).toContain('샘플 회사 · 로봇 소프트웨어 인턴');
@@ -132,7 +132,7 @@ describe('refineBody', () => {
 
   test('제한 없음·확인할 항목 없음·소재 없음', () => {
     const body = refineBody({ ...base, limit: undefined, checks: [], entry: undefined });
-    expect(body).toContain('### 글자 수 제한\n\n\n');
+    expect(body).toContain('### 공통 글자 수 제한 (선택)\n\n\n');
     expect(body).not.toContain('#### 확인할 항목');
     expect(body).toContain('선택한 소재: 없음');
     expect(body).toContain('#### 편집본 (6자)');
@@ -144,6 +144,6 @@ describe('refineBody', () => {
     expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL);
     const sent = new URL(url).searchParams.get('body')!;
     expect(sent).toContain('잘렸어요');
-    expect(sent).toContain('### 자소서 문항');
+    expect(sent).toContain('### 지원서 양식 파일(PDF·이미지) 또는 문항 원문');
   });
 });
