@@ -1,291 +1,508 @@
 ---
 import type { Profile } from '../lib/profile';
-import { introHtml } from '../lib/intro';
 import { withBase } from '../lib/url';
 
 interface Props {
   profile: Profile;
+  experience: string[];
 }
 
-const { profile } = Astro.props;
-const { line1, line2, line3 } = profile.name;
-// 셋째 줄의 × 만 포인트색
-const line3Parts = line3.split('×');
+const { profile, experience } = Astro.props;
+const initial = {
+  name: profile.name.ko,
+  englishName: [profile.name.line1, profile.name.line2].filter(Boolean).join(' '),
+  tagline: profile.intro.replace(/\*\*(.+?)\*\*/g, '$1'),
+  phone: '',
+  email: profile.email ?? '',
+  website: profile.links.find(({ url }) => /^https?:\/\//i.test(url))?.url ?? '',
+  affiliation: '',
+  experience: experience.join('\n'),
+};
 ---
 
-<section class="hero" aria-labelledby="hero-title">
-  <div class="hero-inner">
-    <div class="visual">
-      {
-        profile.photo ? (
-          <img src={withBase(profile.photo)} alt={profile.name.ko} width="640" height="800" fetchpriority="high" />
-        ) : (
-          <div class="monogram" aria-hidden="true">
-            {profile.monogram}
-          </div>
-        )
-      }
+<section class="home-profile container" aria-labelledby="home-name">
+  <div class="profile-visual">
+    <div class="portrait">
+      {profile.photo ? (
+        <img data-home-portrait src={withBase(profile.photo)} alt={initial.name} width="640" height="800" fetchpriority="high" />
+      ) : (
+        <span class="monogram" aria-hidden="true">{profile.monogram}</span>
+      )}
     </div>
+    <button class="edit-button" type="button" data-edit-home hidden><span aria-hidden="true">✎</span> 수정하기</button>
+    <p class="save-status" data-home-status role="status"></p>
+  </div>
 
-    <div class="text">
-      <h1 id="hero-title" class="type">
-        <span class="visually-hidden">{profile.name.ko} · </span>
-        <span class="line" style="--i: 0">{line1}</span>
-        <span class="line muted" style="--i: 1">{line2}<span class="dash" aria-hidden="true"></span></span>
-        <span class="line" style="--i: 2">
-          {line3Parts.map((part, i) => (i === 0 ? part : [<span class="times">×</span>, part]))}
-        </span>
-      </h1>
-
-      <p class="intro rise" style="--i: 3" set:html={introHtml(profile.intro)} />
-
-      <div class="rise" style="--i: 4">
-        <slot />
+  <div class="profile-details">
+    <header class="introduction">
+      <p class="section-label">Introduction</p>
+      <div class="profile-names">
+        <h1 id="home-name" data-home-name>{initial.name}</h1>
+        <p class="english-name" data-home-english-name hidden={!initial.englishName}>{initial.englishName}</p>
       </div>
-    </div>
+      <p class="tagline" data-home-tagline hidden={!initial.tagline}>{initial.tagline}</p>
+    </header>
+
+    <section class="profile-section profile-row" aria-labelledby="home-contact">
+      <h2 id="home-contact" class="section-label">Contact</h2>
+      <ul class="contact-list">
+        <li>
+          <span class="contact-label">전화번호</span>
+          <a data-home-phone>—</a>
+        </li>
+        <li>
+          <span class="contact-label">이메일</span>
+          <a data-home-email href={initial.email ? 'mailto:' + initial.email : undefined}>{initial.email || '—'}</a>
+        </li>
+        <li>
+          <span class="contact-label">SNS</span>
+          <a data-home-website href={initial.website || undefined}>{initial.website || '—'}</a>
+        </li>
+      </ul>
+    </section>
+
+    <section class="profile-section profile-row" aria-labelledby="home-experience">
+      <h2 id="home-experience" class="section-label">Experience</h2>
+      <div class="experience-surface">
+        <p class="affiliation" data-home-affiliation hidden={!initial.affiliation}>{initial.affiliation}</p>
+        <ul class="experience-list" data-home-experience hidden={experience.length === 0}>
+          {experience.map((item) => <li>{item}</li>)}
+        </ul>
+        <p class="empty" data-home-experience-empty hidden={Boolean(initial.affiliation || experience.length)}>등록된 경력이 없습니다.</p>
+      </div>
+    </section>
+
+    <div class="profile-records"><slot /></div>
   </div>
 
-  <div class="scroll" aria-hidden="true">
-    <span class="scroll-label">SCROLL</span>
-    <span class="scroll-track"><span class="scroll-fill" data-scroll-fill></span></span>
-  </div>
+  <dialog class="editor" data-home-editor aria-labelledby="home-edit-title">
+    <form data-home-form>
+      <h2 id="home-edit-title">메인 페이지 수정</h2>
+      <p class="editor-hint">수정한 내용은 이 브라우저에 저장됩니다.</p>
+
+      <fieldset>
+        <legend>Introduction</legend>
+        <div class="editor-names">
+          <label>이름 <input name="name" value={initial.name} required maxlength="60" autocomplete="name" autofocus /></label>
+          <label>영문 이름 <input name="englishName" value={initial.englishName} maxlength="100" autocomplete="off" /></label>
+        </div>
+        <label>나에 대한 한마디 <textarea name="tagline" rows="2" maxlength="240">{initial.tagline}</textarea></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Contact</legend>
+        <label>전화번호 <input name="phone" type="tel" value={initial.phone} maxlength="50" autocomplete="tel" /></label>
+        <label>이메일 <input name="email" type="email" value={initial.email} maxlength="254" autocomplete="email" /></label>
+        <label>웹사이트 또는 소셜 링크 <input name="website" type="url" value={initial.website} maxlength="500" placeholder="https://" /></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Experience</legend>
+        <label>재학·재직 중인 학교 또는 직장 <input name="affiliation" value={initial.affiliation} maxlength="120" autocomplete="organization" /></label>
+        <label>경력
+          <span class="editor-hint" id="experience-hint">경력을 한 줄에 하나씩 입력하세요.</span>
+          <textarea name="experience" rows="4" maxlength="1500" aria-describedby="experience-hint">{initial.experience}</textarea>
+        </label>
+      </fieldset>
+
+      <p class="editor-error" data-home-error role="alert" hidden></p>
+      <div class="editor-actions">
+        <button type="button" data-cancel-home>취소</button>
+        <button type="submit" class="save-button">저장</button>
+      </div>
+    </form>
+  </dialog>
 </section>
 
 <script>
-  // SCROLL 세로선: 스크롤 진행률을 1:1로 채운다. 반복 애니메이션 없이 스크롤할 때만 그린다.
-  // 스크롤할 내용이 없으면 표시 자체를 숨긴다.
-  const fill = document.querySelector<HTMLElement>('[data-scroll-fill]');
-  const indicator = fill?.closest<HTMLElement>('.scroll');
-  if (fill && indicator) {
-    let frame = 0;
-    const draw = () => {
-      frame = 0;
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      indicator.hidden = max <= 0;
-      const p = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
-      fill.style.transform = `scaleY(${p})`;
+  const home = document.querySelector<HTMLElement>('.home-profile');
+  const form = home?.querySelector<HTMLFormElement>('[data-home-form]');
+  const dialog = home?.querySelector<HTMLDialogElement>('[data-home-editor]');
+  const editButton = home?.querySelector<HTMLButtonElement>('[data-edit-home]');
+
+  if (home && form && dialog && editButton) {
+    const key = 'makerthon:home-profile:' + import.meta.env.BASE_URL;
+    const fields = Array.from(form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[name]'));
+    const readFields = () => Object.fromEntries(fields.map((field) => [field.name, field.value.trim()]));
+    const defaults = readFields();
+    const websiteInput = form.querySelector<HTMLInputElement>('[name="website"]')!;
+    const cancel = form.querySelector<HTMLButtonElement>('[data-cancel-home]')!;
+    const error = form.querySelector<HTMLElement>('[data-home-error]')!;
+    const status = home.querySelector<HTMLElement>('[data-home-status]')!;
+
+    const setText = (selector: string, value: string, optional = false) => {
+      const element = home.querySelector<HTMLElement>(selector)!;
+      element.textContent = value;
+      if (optional) element.hidden = !value;
     };
-    const request = () => {
-      if (!frame) frame = requestAnimationFrame(draw);
+
+    const setContact = (kind: 'phone' | 'email' | 'website', value: string, href: string) => {
+      const link = home.querySelector<HTMLAnchorElement>('[data-home-' + kind + ']')!;
+      link.textContent = value || '—';
+      if (href) link.href = href;
+      else link.removeAttribute('href');
     };
-    addEventListener('scroll', request, { passive: true });
-    addEventListener('resize', request);
-    draw();
+
+    const isWebsite = (value: string) => {
+      try {
+        return ['http:', 'https:'].includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    };
+
+    const display = (profile: Record<string, string>) => {
+      setText('[data-home-name]', profile.name);
+      setText('[data-home-english-name]', profile.englishName, true);
+      setText('[data-home-tagline]', profile.tagline, true);
+      setText('[data-home-affiliation]', profile.affiliation, true);
+      const photo = home.querySelector<HTMLImageElement>('[data-home-portrait]');
+      if (photo) photo.alt = profile.name;
+      const website = isWebsite(profile.website) ? profile.website : '';
+      const dial = profile.phone.replace(/[^\d+]/g, '');
+      setContact('phone', profile.phone, /^\+?\d+$/.test(dial) ? 'tel:' + dial : '');
+      setContact('email', profile.email, profile.email ? 'mailto:' + encodeURIComponent(profile.email).replace('%40', '@') : '');
+      setContact('website', website, website);
+
+      const items = profile.experience.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+      const list = home.querySelector<HTMLElement>('[data-home-experience]')!;
+      list.replaceChildren(...items.map((item) => {
+        const row = document.createElement('li');
+        row.textContent = item;
+        return row;
+      }));
+      list.hidden = items.length === 0;
+      home.querySelector<HTMLElement>('[data-home-experience-empty]')!.hidden = Boolean(profile.affiliation || items.length);
+    };
+
+    let saved = defaults;
+    try {
+      const stored = JSON.parse(localStorage.getItem(key) ?? 'null');
+      if (stored && typeof stored === 'object') {
+        saved = Object.fromEntries(fields.map((field) => [
+          field.name,
+          typeof stored[field.name] === 'string' ? stored[field.name].slice(0, field.maxLength) : defaults[field.name],
+        ]));
+        if (!saved.name.trim()) saved.name = defaults.name;
+        display(saved);
+      }
+    } catch {
+      // The published profile still works when browser storage is unavailable.
+    }
+
+    editButton.hidden = false;
+    editButton.addEventListener('click', () => {
+      for (const field of fields) field.value = saved[field.name];
+      websiteInput.setCustomValidity('');
+      error.hidden = true;
+      status.textContent = '';
+      dialog.showModal();
+    });
+    websiteInput.addEventListener('input', () => websiteInput.setCustomValidity(''));
+    cancel.addEventListener('click', () => dialog.close());
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const next = readFields();
+      if (!next.name) {
+        const name = form.elements.namedItem('name') as HTMLInputElement;
+        name.value = '';
+        name.reportValidity();
+        return;
+      }
+      if (next.website && !isWebsite(next.website)) {
+        websiteInput.setCustomValidity('http:// 또는 https://로 시작하는 주소를 입력하세요.');
+        websiteInput.reportValidity();
+        return;
+      }
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {
+        error.textContent = '이 브라우저에 저장할 수 없습니다. 저장소 설정을 확인해 주세요.';
+        error.hidden = false;
+        return;
+      }
+      saved = next;
+      display(saved);
+      dialog.close();
+      status.textContent = '메인 페이지를 저장했습니다.';
+    });
   }
 </script>
 
 <style>
-  .hero {
-    position: relative;
-    isolation: isolate;
+  .home-profile {
+    --rule: color-mix(in srgb, var(--fg) 19%, var(--bg));
+    --secondary: color-mix(in srgb, var(--fg) 25%, var(--muted));
+    --surface: color-mix(in srgb, var(--accent) 4%, var(--bg));
     display: grid;
-    align-items: center;
-    /* 내비 높이를 빼고 첫 화면을 채운다 */
-    min-height: calc(100svh - 4rem);
-    padding-block: clamp(2.5rem, 7vh, 5rem) clamp(4rem, 10vh, 6rem);
+    max-width: 65rem;
+    grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.7fr);
+    align-items: start;
+    gap: clamp(1.75rem, 5vw, 5rem);
+    padding-block: clamp(2rem, 6vw, 5.5rem);
   }
 
-  /* 미세 도트 배경. 움직이지 않고 가장자리로 갈수록 사라진다 */
-  .hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background-image: radial-gradient(color-mix(in srgb, var(--fg) 16%, transparent) 1px, transparent 1.5px);
-    background-size: 22px 22px;
-    -webkit-mask-image: radial-gradient(ellipse 70% 65% at 55% 45%, #000 20%, transparent 75%);
-    mask-image: radial-gradient(ellipse 70% 65% at 55% 45%, #000 20%, transparent 75%);
-    pointer-events: none;
-  }
-
-  .hero-inner {
-    width: var(--content);
-    margin-inline: auto;
+  .profile-visual {
     display: grid;
-    grid-template-columns: minmax(220px, 0.75fr) 1.6fr;
-    gap: clamp(2rem, 5vw, 5rem);
-    align-items: center;
+    gap: 0.75rem;
   }
 
-  /* 사진 / 모노그램 */
-  .visual {
-    animation: materialize 700ms var(--ease-out) both;
-  }
-
-  .visual img,
-  .monogram {
-    width: 100%;
-    aspect-ratio: 4 / 5;
-    border-radius: 6px;
-  }
-
-  .visual img {
-    object-fit: cover;
-    background: color-mix(in srgb, var(--fg) 6%, transparent);
-  }
-
-  .monogram {
+  .portrait {
     display: grid;
     place-items: center;
-    background: color-mix(in srgb, var(--fg) 4%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 10%, transparent);
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+    border-radius: 1.4rem;
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  }
+
+  .portrait img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .monogram {
     font-family: var(--font-display);
-    font-size: clamp(3rem, 7vw, 6rem);
+    font-size: clamp(2.75rem, 6vw, 6rem);
     line-height: 1;
-    letter-spacing: -0.01em;
-    color: var(--fg);
   }
 
-  /* 3줄 타이포 */
-  .type {
-    margin: 0;
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-size: clamp(3rem, 9vw, 8rem);
-    line-height: 0.95;
-    letter-spacing: -0.01em;
-    text-transform: uppercase;
+  button {
+    min-height: 2.75rem;
+    padding-inline: 1rem;
+    border: 1px solid var(--rule);
+    border-radius: 0.5rem;
+    background: var(--surface);
+    cursor: pointer;
   }
 
-  .line {
-    display: block;
-    animation: rise 600ms var(--ease-out) both;
-    animation-delay: calc(100ms + var(--i) * 80ms);
+  button:hover,
+  button:active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg));
   }
 
-  .muted {
-    color: var(--muted);
+  .save-status {
+    color: var(--secondary);
+    font-size: 0.875rem;
   }
 
-  .dash {
-    display: inline-block;
-    width: 0.42em;
-    height: 0.09em;
-    margin-left: 0.14em;
-    vertical-align: 0.34em;
-    background: var(--accent);
-  }
-
-  /* Anton에는 × 글리프가 없어 대체 글꼴의 굵은 ✖가 나온다. 가는 시스템 글꼴로 맞춘다 */
-  .times {
-    display: inline-block;
-    margin-inline: 0.04em;
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    font-weight: 200;
-    font-size: 0.82em;
-    vertical-align: 0.04em;
-    color: var(--accent);
-  }
-
-  .intro {
-    margin-top: clamp(1.5rem, 3vw, 2.25rem);
-    max-width: 34em;
-    font-size: clamp(1.0625rem, 1.4vw, 1.25rem);
-    line-height: 1.7;
-    color: var(--muted);
-  }
-
-  .intro :global(strong) {
-    color: var(--fg);
-  }
-
-  .rise {
-    animation: rise 600ms var(--ease-out) both;
-    animation-delay: calc(100ms + var(--i) * 80ms);
-  }
-
-  .rise:last-child {
-    margin-top: clamp(1.75rem, 3.5vw, 2.5rem);
-  }
-
-  /* SCROLL 세로선 */
-  .scroll {
-    position: absolute;
-    left: var(--gutter);
-    bottom: clamp(1rem, 3vh, 2rem);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.75rem;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.24em;
-    color: var(--muted);
-  }
-
-  .scroll[hidden] {
+  .save-status:empty {
     display: none;
   }
 
-  .scroll-label {
-    writing-mode: vertical-rl;
+  .profile-details {
+    min-width: 0;
   }
 
-  .scroll-track {
-    position: relative;
-    width: 1px;
-    height: 56px;
-    overflow: hidden;
-    background: color-mix(in srgb, var(--fg) 16%, transparent);
+  .profile-names {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem 1rem;
   }
 
-  .scroll-fill {
-    position: absolute;
-    inset: 0;
-    background: var(--fg);
-    transform: scaleY(0);
-    transform-origin: top;
-    will-change: transform;
+  .edit-button {
+    justify-self: start;
+    padding-inline: 0.25rem;
+    border-color: transparent;
+    background: transparent;
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 0.25em;
   }
 
-  @keyframes rise {
-    from {
-      opacity: 0;
-      transform: translateY(24px);
+  .section-label {
+    margin-bottom: 0.65rem;
+    color: var(--secondary);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.065em;
+  }
+
+  h1 {
+    overflow-wrap: anywhere;
+    font-size: clamp(2.65rem, 7vw, 5.5rem);
+    line-height: 1.04;
+    letter-spacing: -0.045em;
+  }
+
+  .english-name {
+    color: var(--secondary);
+    font-size: clamp(0.95rem, 1.75vw, 1.2rem);
+    overflow-wrap: anywhere;
+  }
+
+  .tagline {
+    max-width: 42ch;
+    margin-top: 0.9rem;
+    font-size: clamp(1rem, 2vw, 1.25rem);
+  }
+
+  .profile-section,
+  .profile-records {
+    margin-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1rem;
+  }
+
+  .profile-row {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 0.45rem 1rem;
+    align-items: start;
+  }
+
+  .experience-surface {
+    padding: 0.8rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 10%, var(--bg));
+    border-radius: 0.9rem;
+    background: var(--surface);
+  }
+
+  .contact-list,
+  .experience-list {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  .contact-list li {
+    display: grid;
+    grid-template-columns: minmax(3.5rem, max-content) minmax(0, 1fr);
+    gap: 0.6rem;
+  }
+
+  .contact-label {
+    font-family: var(--font-ko-bold);
+  }
+
+  .contact-list a[href] {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    overflow-wrap: anywhere;
+  }
+
+  .affiliation {
+    margin-bottom: 0.35rem;
+    font-family: var(--font-ko-bold);
+  }
+
+  .empty,
+  .contact-list a:not([href]) {
+    color: var(--secondary);
+  }
+
+  .editor {
+    width: min(36rem, 100% - 2rem);
+    max-height: calc(100dvh - 2rem);
+    padding: clamp(1rem, 4vw, 1.75rem);
+    border: 1px solid var(--rule);
+    border-radius: 0.85rem;
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  .editor::backdrop {
+    background: rgb(0 0 0 / 65%);
+  }
+
+  .editor-hint {
+    display: block;
+    color: var(--secondary);
+    font-size: 0.875rem;
+  }
+
+  .editor h2 + .editor-hint {
+    margin-top: 0.45rem;
+  }
+
+  .editor fieldset {
+    padding: 0;
+    margin: 1.25rem 0 0;
+    border: 0;
+    min-inline-size: 0;
+  }
+
+  .editor legend {
+    margin-bottom: 0.4rem;
+    padding: 0;
+    font-family: var(--font-ko-bold);
+  }
+
+  .editor-names {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .editor label {
+    display: grid;
+    gap: 0.25rem;
+    margin-top: 0.55rem;
+    font-size: 0.9375rem;
+  }
+
+  .editor input,
+  .editor textarea {
+    width: 100%;
+    min-width: 0;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--rule);
+    border-radius: 0.4rem;
+    background: var(--surface);
+    font: inherit;
+    color: inherit;
+  }
+
+  .editor textarea {
+    resize: vertical;
+  }
+
+  .editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1.15rem;
+  }
+
+  .save-button {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  }
+
+  .editor-error {
+    margin-top: 0.75rem;
+    color: var(--fg);
+  }
+
+  [hidden] {
+    display: none;
+  }
+
+  @media (max-width: 42rem) {
+    .home-profile {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .profile-visual {
+      width: min(100%, 17rem);
+    }
+
+    .profile-row {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 
-  @keyframes materialize {
-    from {
-      opacity: 0;
-      filter: blur(12px);
-      transform: scale(0.96);
-    }
-  }
-
-  @keyframes fade {
-    from {
-      opacity: 0;
-    }
-  }
-
-  @media (max-width: 760px) {
-    .hero {
-      min-height: auto;
-      padding-block: 2rem 5rem;
-    }
-    .hero-inner {
-      grid-template-columns: 1fr;
-      gap: 2rem;
-    }
-    .visual {
-      width: min(62%, 280px);
-    }
-    .type {
-      font-size: clamp(3rem, 15vw, 5rem);
-    }
-    /* 한 열에서는 내용과 겹치므로 숨긴다 */
-    .scroll {
-      display: none;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .line,
-    .rise,
-    .visual {
-      animation-name: fade;
-      animation-duration: 300ms;
+  @media (max-width: 24rem) {
+    .editor-names {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>
