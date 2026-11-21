@@ -1,0 +1,368 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import MemoPanel from '../../components/MemoPanel.astro';
+import { loadProfile } from '../../lib/profile';
+import { issueUrl } from '../../lib/issue';
+import { TYPE_LABELS, TYPE_ORDER } from '../../lib/types';
+import { withBase } from '../../lib/url';
+import { sortByDate } from '../../lib/entries';
+import type { MemoFile } from '../../lib/memo';
+import { existsSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// 관리 페이지는 비공개 항목까지 전부 보여 준다(publicOnly를 거치지 않는다). 대신 noindex.
+const profile = loadProfile();
+const entries = sortByDate(await getCollection('entries'));
+
+const counts = TYPE_ORDER.map((type) => ({ type, label: TYPE_LABELS[type], n: entries.filter((e) => e.data.type === type).length })).filter(
+  (c) => c.n > 0,
+);
+
+type Entry = (typeof entries)[number];
+const entryPath = (e: Entry) => e.filePath ?? `content/entries/${e.id}.md`;
+
+// 항목에 딸린 파일: 본문 Markdown + 첨부(frontmatter attachments와 public/archive/<id>/ 폴더) + 자료 링크
+function filesOf(e: Entry): MemoFile[] {
+  const folder = resolve(process.cwd(), 'public/archive', e.id);
+  const inFolder = existsSync(folder)
+    ? readdirSync(folder, { withFileTypes: true })
+        .filter((d) => d.isFile() && !d.name.startsWith('.'))
+        .map((d) => `archive/${e.id}/${d.name}`)
+    : [];
+  const attachments = [...new Set([...e.data.attachments, ...inFolder])];
+  return [
+    { ref: entryPath(e), label: '항목 본문', kind: 'entry' },
+    ...attachments.map((a): MemoFile => ({ ref: `public/${a}`, label: a.split('/').pop()!, kind: 'file', href: withBase(a) })),
+    ...e.data.links.map((l): MemoFile => ({ ref: l.url, label: l.label, kind: 'link', href: l.url })),
+  ];
+}
+
+const ym = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+const period = (start: Date, end?: Date) => (end ? `${ym(start)} – ${ym(end)}` : ym(start));
+
+// 버튼 본문은 각 이슈 템플릿(.github/ISSUE_TEMPLATE/*.yml)이 만드는 본문과 같은 틀로 맞춘다.
+const actions = [
+  {
+    label: '기록하기',
+    plus: true,
+    url: issueUrl(profile.repo, {
+      label: 'archive',
+      title: '[기록] ',
+      body: '### 활동 메모\n\n(활동 시기, 맡은 역할, 한 일을 기억나는 만큼 적어 주세요. 이미지나 PDF는 이 칸에 끌어다 놓으면 첨부돼요.)\n\n### 관련 링크\n\n(GitHub 저장소, 발표 자료 등 활동을 확인할 수 있는 주소를 한 줄에 하나씩 적어 주세요.)\n',
+    }),
+  },
+  {
+    label: '공고 분석',
+    url: issueUrl(profile.repo, {
+      label: 'job',
+      title: '[공고] ',
+      body: '### 공고 본문 또는 링크\n\n(공고 본문을 붙여 넣거나 공고 주소를 적어 주세요. 자소서 문항이 있다면 함께 적어 주세요.)\n\n### 지원 직무\n\n',
+    }),
+  },
+  {
+    label: '자소서 쓰기',
+    url: issueUrl(profile.repo, {
+      label: 'essay',
+      title: '[자소서] ',
+      body: '### 지원처\n\n(회사나 기관 이름과 직무)\n\n### 자소서 문항\n\n(답변하려는 문항 하나를 원문 그대로 붙여 넣어 주세요.)\n\n### 글자 수 제한\n\n(공백 포함 최대 글자 수. 없으면 비워 두세요.)\n',
+    }),
+  },
+];
+---
+
+<Base title="관리" description="모든 기록을 보고 메모를 남기는 관리 페이지" noindex>
+  <div class="manage container">
+    <header class="head">
+      <div>
+        <p class="eyebrow">MANAGE</p>
+        <h1>관리</h1>
+        <p class="lead">비공개 항목까지 모두 보여요. 항목을 누르면 파일별로 메모를 남기고, 모아서 AI에게 정리를 맡길 수 있어요.</p>
+      </div>
+      <div class="actions">
+        {
+          actions.map((a, i) => (
+            <a class:list={['action', { primary: i === 0 }]} href={a.url} target="_blank" rel="noopener">
+              {a.plus && <span class="plus" aria-hidden="true">+</span>}
+              {a.label}
+              <span class="visually-hidden">(GitHub 이슈 작성 화면이 새 탭으로 열려요)</span>
+            </a>
+          ))
+        }
+      </div>
+    </header>
+
+    <div class="filter" role="group" aria-label="종류로 거르기" data-filter hidden>
+      <button type="button" aria-pressed="true" data-type="all">전체 <span class="n">{entries.length}</span></button>
+      {
+        counts.map((c) => (
+          <button type="button" aria-pressed="false" data-type={c.type}>
+            {c.label} <span class="n">{c.n}</span>
+          </button>
+        ))
+      }
+    </div>
+
+    {
+      entries.length === 0 ? (
+        <p class="empty">아직 기록이 없어요. 위의 기록하기로 첫 항목을 남겨 보세요.</p>
+      ) : (
+        <ul class="list" data-list>
+          {entries.map((e) => (
+            <li data-type={e.data.type}>
+              <button
+                type="button"
+                class="row"
+                data-memo-open
+                data-id={e.id}
+                data-title={e.data.title}
+                data-type-label={TYPE_LABELS[e.data.type]}
+                data-path={entryPath(e)}
+                data-files={JSON.stringify(filesOf(e))}
+                aria-haspopup="dialog"
+              >
+                <span class="date">{period(e.data.date, e.data.end)}</span>
+                <span class="main">
+                  <span class="title">
+                    {e.data.title}
+                    {!e.data.public && <span class="badge">비공개</span>}
+                  </span>
+                  <span class="sub">
+                    {TYPE_LABELS[e.data.type]}
+                    {e.data.org && <> · {e.data.org}</>}
+                    {' · '}파일 {filesOf(e).length}개
+                  </span>
+                </span>
+                <span class="memo-dot" data-memo-dot title="메모 있음" hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </div>
+
+  <MemoPanel repo={profile.repo} />
+</Base>
+
+<script>
+  // 종류 필터. JS가 꺼져 있으면 필터 줄은 숨은 채로 전부 보인다.
+  // TODO(Task 4 병합 후): TypeFilter.astro로 교체
+  const bar = document.querySelector<HTMLElement>('[data-filter]');
+  const items = document.querySelectorAll<HTMLLIElement>('[data-list] > li');
+  if (bar) {
+    bar.hidden = false;
+    bar.addEventListener('click', (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-type]');
+      if (!btn) return;
+      const type = btn.dataset.type;
+      bar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      items.forEach((li) => (li.hidden = type !== 'all' && li.dataset.type !== type));
+    });
+  }
+</script>
+
+<style>
+  .manage {
+    padding-block: clamp(2rem, 6vw, 4.5rem) 6rem;
+  }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.5rem 2rem;
+    margin-bottom: 2.5rem;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+  }
+  h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+  .lead {
+    margin-top: 0.75rem;
+    color: var(--muted);
+    max-width: 36rem;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .action {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0 1.125rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+    font-size: 0.9375rem;
+    transition:
+      transform 100ms ease-out,
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+  .action:hover {
+    border-color: color-mix(in srgb, var(--fg) 40%, transparent);
+  }
+  .action.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-family: var(--font-ko-bold);
+  }
+  .action:active {
+    transform: scale(0.97);
+  }
+  .plus {
+    margin-right: 0.3em;
+  }
+
+  .filter {
+    display: flex;
+    gap: 0.375rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    margin-bottom: 1rem;
+    scrollbar-width: none;
+  }
+  .filter[hidden] {
+    display: none;
+  }
+  .filter button {
+    flex: none;
+    min-height: 2.25rem;
+    padding: 0 0.875rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+    color: var(--muted);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition:
+      transform 100ms ease-out,
+      background-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+  .filter button:active {
+    transform: scale(0.97);
+  }
+  .filter button[aria-pressed='true'] {
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .filter .n {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-left: 0.25rem;
+  }
+
+  .list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 52rem;
+  }
+  .list li + li {
+    border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 9.5rem 1fr auto;
+    align-items: baseline;
+    gap: 1rem;
+    width: 100%;
+    padding: 1.125rem 0.75rem;
+    margin-inline: -0.75rem;
+    box-sizing: content-box;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      transform 100ms ease-out;
+  }
+  .row:hover,
+  .row[aria-expanded='true'] {
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+  }
+  .row:active {
+    transform: scale(0.99);
+  }
+  .date {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .title {
+    font-size: 1.0625rem;
+    line-height: 1.4;
+  }
+  .sub {
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .badge {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.0625rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--muted) 60%, transparent);
+    color: var(--muted);
+    font-size: 0.75rem;
+    vertical-align: 0.125rem;
+    white-space: nowrap;
+  }
+  .memo-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--accent);
+    align-self: center;
+  }
+  .memo-dot[hidden] {
+    display: none;
+  }
+  .empty {
+    color: var(--muted);
+    padding: 3rem 0;
+  }
+
+  @media (max-width: 640px) {
+    .row {
+      grid-template-columns: 1fr auto;
+      gap: 0.25rem 1rem;
+    }
+    .date {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .action:active,
+    .filter button:active,
+    .row:active {
+      transform: none;
+    }
+  }
+</style>
