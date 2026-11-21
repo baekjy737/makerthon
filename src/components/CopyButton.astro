@@ -1,0 +1,118 @@
+---
+// 클립보드 복사 버튼. 링크드인·리멤버처럼 쓰기 API가 없는 곳에 붙여 넣을 문구를 복사한다.
+interface Props {
+  /** 복사할 문구 */
+  text: string;
+  /** 버튼 문구 */
+  label: string;
+  class?: string;
+}
+
+const { text, label, class: className } = Astro.props;
+---
+
+<button type="button" class:list={['copy-button', className]} data-copy-text={text} data-copy-label={label}>
+  <span data-copy-status>{label}</span>
+</button>
+
+<script>
+  const RESET_MS = 2000;
+
+  /** 클립보드 API가 막힌 환경(http, 오래된 브라우저)에서는 숨긴 textarea로 복사한다 */
+  function legacyCopy(text: string): boolean {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    area.remove();
+    return ok;
+  }
+
+  async function copy(text: string): Promise<boolean> {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return legacyCopy(text);
+    }
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-copy-text]').forEach((button) => {
+    const status = button.querySelector<HTMLElement>('[data-copy-status]')!;
+    // 문구가 바뀌는 것을 스크린리더에도 알린다
+    status.setAttribute('aria-live', 'polite');
+    let timer: number | undefined;
+
+    button.addEventListener('click', async () => {
+      const ok = await copy(button.dataset.copyText ?? '');
+      button.dataset.state = ok ? 'done' : 'failed';
+      status.textContent = ok ? '복사했어요' : '복사하지 못했어요';
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        delete button.dataset.state;
+        status.textContent = button.dataset.copyLabel ?? '';
+      }, RESET_MS);
+    });
+  });
+</script>
+
+<style>
+  .copy-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 1rem;
+    border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--font-ko-bold);
+    font-size: 0.875rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      border-color 150ms ease-out,
+      color 150ms ease-out,
+      transform 100ms ease-out;
+  }
+
+  .copy-button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* 누르는 순간 바로 반응 */
+  .copy-button:active {
+    transform: scale(0.97);
+  }
+
+  .copy-button[data-state='done'] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .copy-button[data-state='failed'] {
+    border-color: color-mix(in srgb, #ef4444 70%, var(--fg));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .copy-button:active {
+      transform: none;
+    }
+  }
+
+  @media print {
+    .copy-button {
+      display: none;
+    }
+  }
+</style>
