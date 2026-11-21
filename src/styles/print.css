@@ -1,0 +1,55 @@
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+
+  html:has(.resume-document),
+  body:has(.resume-document) {
+    --bg: #fff !important;
+    --fg: #000 !important;
+    --muted: #000 !important;
+    --accent: #000 !important;
+    height: auto;
+    min-height: 0;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  body:has(.resume-document) > :not(main),
+  .resume-document .print-hide {
+    display: none !important;
+  }
+
+  .resume-document.container {
+    width: 100%;
+    max-width: none;
+    padding: 0;
+    font-size: 10pt;
+  }
+
+  .resume-document .resume-heading {
+    margin-bottom: 7mm;
+  }
+
+  .resume-document h1 {
+    font-size: 26pt;
+  }
+
+  .resume-document .resume-section,
+  .resume-document .resume-entry {
+    break-inside: avoid;
+  }
+
+  .resume-document h2 {
+    break-after: avoid;
+  }
+
+  .resume-document .resume-section + .resume-section {
+    margin-top: 5mm;
+  }
+
+  .resume-document .resume-entry {
+    padding-block: 2mm;
+  }
+}

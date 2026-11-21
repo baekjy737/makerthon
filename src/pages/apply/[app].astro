@@ -1,0 +1,256 @@
+---
+import { getCollection, render } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { withBase } from '../../lib/url';
+
+export async function getStaticPaths() {
+  return (await getCollection('applications')).map((application) => ({
+    params: { app: application.id },
+    props: { application },
+  }));
+}
+
+interface Props {
+  application: CollectionEntry<'applications'>;
+}
+
+const { application } = Astro.props;
+const { id, data } = application;
+const entries = await getCollection('entries');
+const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
+const matches = data.matches.flatMap((match) => {
+  const entry = entriesById.get(match.entry);
+  return entry?.data.public ? [{ match, entry }] : [];
+}).sort((a, b) => b.match.score - a.match.score);
+const privateMatches = data.matches.filter((match) => entriesById.get(match.entry)?.data.public === false);
+const essays = await getCollection('essays', (essay) => (
+  essay.id.startsWith(`${id}/`) &&
+  essay.data.entries.every((entryId) => entriesById.get(entryId)?.data.public === true)
+));
+essays.sort((a, b) => a.id.localeCompare(b.id, 'ko', { numeric: true }));
+const drafts = await Promise.all(essays.map(async (essay) => {
+  const { Content } = await render(essay);
+  const length = [...(essay.body ?? '').trim().replace(/\r\n/g, '\n')].length;
+  return { Content, length, ...essay.data };
+}));
+const deadline = data.deadline?.toISOString().slice(0, 10);
+const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
+---
+
+<Base title={`${data.company} · ${data.position}`}>
+  <article class="container application">
+    <header class="application-heading">
+      <a class="back" href={withBase('apply/')}>← 지원 목록</a>
+      <p class="company">{data.company}</p>
+      <h1>{data.position}</h1>
+      <p class="deadline">
+        {deadline ? <>마감 <time datetime={deadline}>{deadline}</time></> : '마감일 미정'}
+      </p>
+      <div class="actions">
+        <a class="resume-link" href={withBase(`resume/${id}/`)}>맞춤 이력서 보기 <span aria-hidden="true">→</span></a>
+        {postingUrl && <a class="posting-link" href={postingUrl}>공고 원문 <span aria-hidden="true">↗</span></a>}
+      </div>
+    </header>
+
+    <div class="analysis">
+      <section aria-labelledby="requirements">
+        <h2 id="requirements">요구 역량</h2>
+        {data.requirements.length
+          ? <ul>{data.requirements.map((requirement) => <li>{requirement}</li>)}</ul>
+          : <p class="empty">등록된 요구 역량이 없습니다.</p>}
+      </section>
+      <section aria-labelledby="gaps">
+        <h2 id="gaps">보완할 점</h2>
+        {data.gaps.length
+          ? <ul>{data.gaps.map((gap) => <li>{gap}</li>)}</ul>
+          : <p class="empty">등록된 보완 항목이 없습니다.</p>}
+      </section>
+    </div>
+
+    <section class="match-section" aria-labelledby="matches">
+      <h2 id="matches">관련 기록</h2>
+      {matches.length || privateMatches.length ? (
+        <ul class="match-list">
+          {matches.map(({ match, entry }) => (
+            <li>
+              <div class="match-heading">
+                <h3><a href={withBase(`portfolio/${entry.id}/`)}>{entry.data.title}</a></h3>
+                <span class="score">{match.score}점</span>
+              </div>
+              <meter min="0" max="100" value={match.score} aria-label={`${entry.data.title} 적합도`}></meter>
+              <p>{match.reason}</p>
+            </li>
+          ))}
+          {privateMatches.map(() => <li class="empty">비공개 항목</li>)}
+        </ul>
+      ) : <p class="empty">등록된 관련 기록이 없습니다.</p>}
+    </section>
+
+    <section class="draft-section" aria-labelledby="drafts">
+      <h2 id="drafts">자소서 초안</h2>
+      {drafts.length ? drafts.map(({ Content, question, length, limit }) => (
+        <article class="draft">
+          <h3>{question}</h3>
+          <p class="draft-count">원문 {length}자{limit != null && ` / 제한 ${limit}자`}</p>
+          <div class="draft-body"><Content /></div>
+        </article>
+      )) : <p class="empty">표시할 자소서 초안이 없습니다.</p>}
+    </section>
+  </article>
+</Base>
+
+<style>
+  .application {
+    --rule: color-mix(in srgb, var(--muted) 48%, transparent);
+    max-width: 64rem;
+    padding-block: clamp(2rem, 6vw, 5rem);
+  }
+
+  .application-heading {
+    padding-bottom: clamp(1.75rem, 5vw, 3.5rem);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .back,
+  .company,
+  .deadline,
+  .empty,
+  .draft-count {
+    color: var(--muted);
+  }
+
+  .company {
+    margin-top: 1.5rem;
+    font-size: 1.15rem;
+  }
+
+  h1 {
+    margin-top: 0.25rem;
+    font-size: clamp(2.5rem, 7vw, 4.75rem);
+    letter-spacing: -0.045em;
+  }
+
+  .deadline,
+  .actions {
+    margin-top: 1rem;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.65rem 1rem;
+  }
+
+  .actions a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding-inline: 0.75rem;
+    border-radius: 0.5rem;
+  }
+
+  .resume-link {
+    border: 1px solid var(--accent);
+  }
+
+  .actions a:hover,
+  .actions a:active {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  }
+
+  a {
+    text-underline-offset: 0.22em;
+  }
+
+  .back:hover,
+  .match-heading a {
+    text-decoration: underline;
+  }
+
+  .analysis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem 2rem;
+    margin-top: 2rem;
+  }
+
+  .analysis ul {
+    padding-inline-start: 1.2em;
+    margin: 0;
+  }
+
+  .analysis li + li {
+    margin-top: 0.35rem;
+  }
+
+  h2 {
+    margin-bottom: 0.9rem;
+    font-size: 1.5rem;
+  }
+
+  h3 {
+    font-size: 1.075rem;
+  }
+
+  .match-section,
+  .draft-section {
+    margin-top: 2.5rem;
+  }
+
+  .match-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .match-list li,
+  .draft {
+    padding-block: 1rem;
+    border-top: 1px solid var(--rule);
+  }
+
+  .match-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .score {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  meter {
+    display: block;
+    width: min(100%, 24rem);
+    margin-block: 0.5rem;
+    accent-color: var(--accent);
+  }
+
+  meter::-webkit-meter-optimum-value {
+    background: var(--accent);
+  }
+
+  .draft-count {
+    margin-top: 0.35rem;
+    font-size: 0.9rem;
+  }
+
+  .draft-body {
+    margin-top: 0.75rem;
+  }
+
+  .draft-body :global(p + p) {
+    margin-top: 0.75rem;
+  }
+
+  @media (max-width: 38rem) {
+    .analysis {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
