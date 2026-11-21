@@ -169,10 +169,114 @@ const month = (date: Date) => date.toISOString().slice(0, 7).replace('-', '.');
     font-size: 1rem;
   }
 
+  @media screen {
+    .resume-document {
+      --resume-rule: color-mix(in srgb, var(--fg) 18%, var(--bg));
+      --resume-secondary: color-mix(in srgb, var(--fg) 24%, var(--muted));
+      padding-block-start: clamp(1.5rem, 4vw, 3.5rem);
+    }
+
+    .resume-heading {
+      margin-bottom: clamp(1.75rem, 5vw, 3.75rem);
+    }
+
+    .resume-toolbar {
+      margin-bottom: clamp(0.75rem, 2vw, 1.25rem);
+      color: var(--resume-secondary);
+      font-size: 0.875rem;
+    }
+
+    .resume-toolbar a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.75rem;
+    }
+
+    button {
+      flex-shrink: 0;
+      padding-inline: 1rem;
+      border-radius: 2rem;
+      background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+      font-family: var(--font-ko-bold);
+    }
+
+    button:hover,
+    button:active {
+      background: color-mix(in srgb, var(--accent) 26%, var(--bg));
+    }
+
+    h1 {
+      font-size: clamp(2.5rem, 8vw, 5.25rem);
+      line-height: 1.08;
+    }
+
+    .application-label {
+      font-size: clamp(1rem, 2vw, 1.2rem);
+    }
+
+    .resume-section {
+      display: grid;
+      grid-template-columns: minmax(8rem, 1fr) minmax(0, 3fr);
+      gap: 0.7rem 1.75rem;
+      border-top: 1px solid var(--resume-rule);
+      padding-block: 1.15rem;
+    }
+
+    .resume-section + .resume-section {
+      margin-top: 0;
+    }
+
+    h2 {
+      padding: 0;
+      border: 0;
+      font-size: 1.2rem;
+    }
+
+    .resume-entry {
+      grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
+      grid-template-areas: "date title" "date summary";
+      gap: 0.25rem 1.35rem;
+      padding: 0;
+    }
+
+    .resume-entry + .resume-entry {
+      margin-top: 0.9rem;
+      border-top: 1px solid var(--resume-rule);
+      padding-top: 0.9rem;
+    }
+
+    .entry-period {
+      grid-area: date;
+      line-height: 1.4;
+      letter-spacing: 0.02em;
+    }
+
+    h3 {
+      grid-area: title;
+      line-height: 1.4;
+    }
+
+    .entry-summary {
+      grid-area: summary;
+      line-height: 1.5;
+    }
+
+    .entry-period,
+    .entry-summary,
+    h3 span {
+      color: var(--resume-secondary);
+    }
+  }
+
   @media screen and (max-width: 42rem) {
+    .resume-section {
+      grid-template-columns: 1fr;
+      padding-block: 1rem;
+    }
+
     .resume-entry {
       grid-template-columns: 1fr;
-      gap: 0.25rem;
+      grid-template-areas: "date" "title" "summary";
     }
   }
 </style>
