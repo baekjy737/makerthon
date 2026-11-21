@@ -1,8 +1,96 @@
 ---
 import { getCollection } from 'astro:content';
+import EntryCard from '../../components/EntryCard.astro';
 import ResumeDocument from '../../components/ResumeDocument.astro';
+import { publicOnly, sortByDate } from '../../lib/entries';
+import { withBase } from '../../lib/url';
 
 const entries = await getCollection('entries');
+const featured = sortByDate(publicOnly(entries)).filter((entry) => entry.data.featured);
 ---
 
-<ResumeDocument entries={entries} />
+<ResumeDocument entries={entries}>
+  <section class="container portfolio" id="portfolio" aria-labelledby="portfolio-title">
+    <header class="portfolio-header">
+      <p class="eyebrow">SELECTED WORK · {featured.length.toString().padStart(2, '0')}</p>
+      <h2 id="portfolio-title">포트폴리오</h2>
+      <p class="lede">대표 작업의 역할과 배운 점, 구체적인 기록을 자세히 확인해 보세요.</p>
+    </header>
+
+    {
+      featured.length > 0 ? (
+        <div class="portfolio-grid">
+          {featured.map((entry) => (
+            <EntryCard entry={entry} href={withBase(`/portfolio/${entry.id}/`)} />
+          ))}
+        </div>
+      ) : (
+        <p class="empty">아직 대표 작업이 없습니다.</p>
+      )
+    }
+
+    <a class="more" href={withBase('/archive')}>전체 아카이브 보기 <span aria-hidden="true">↗</span></a>
+  </section>
+</ResumeDocument>
+
+<style>
+  .portfolio {
+    max-width: 64rem;
+    padding-block: clamp(3rem, 7vw, 5rem) 6rem;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+    scroll-margin-top: 5rem;
+  }
+
+  .portfolio-header {
+    margin-bottom: clamp(1.5rem, 4vw, 2.5rem);
+  }
+
+  .eyebrow {
+    margin-bottom: 0.75rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+  }
+
+  h2 {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+  }
+
+  .lede {
+    margin-top: 0.5rem;
+    color: var(--muted);
+  }
+
+  .portfolio-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(1rem, 2.5vw, 1.5rem);
+  }
+
+  .empty {
+    padding: 2rem 0;
+    color: var(--muted);
+  }
+
+  .more {
+    display: inline-block;
+    margin-top: 2rem;
+    color: var(--accent);
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+  }
+
+  @media (max-width: 760px) {
+    .portfolio-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* PDF로 저장할 때는 이력서만 */
+  @media print {
+    .portfolio {
+      display: none;
+    }
+  }
+</style>

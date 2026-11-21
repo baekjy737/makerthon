@@ -66,6 +66,7 @@ const remember = rememberText(entries.map((e) => e.data));
       </section>
     )) : <p>이력서에 표시할 공개 기록이 없습니다.</p>}
   </article>
+  <slot />
 </Base>
 
 <script>

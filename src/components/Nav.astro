@@ -9,7 +9,6 @@ const { monogram } = Astro.props;
 const items = [
   { href: '/', label: 'MAIN' },
   { href: '/archive', label: 'ARCHIVE' },
-  { href: '/portfolio', label: 'PORTFOLIO' },
   { href: '/resume', label: 'RESUME' },
   { href: '/recommend', label: 'RECOMMEND' },
   { href: '/apply', label: 'APPLY' },
@@ -17,8 +16,10 @@ const items = [
 
 const here = Astro.url.pathname.replace(/\/$/, '');
 const recommendationRoutes = ['/recommend', '/match', '/next', '/plan'];
+// 포트폴리오 상세는 이력서 하단의 포트폴리오에서 들어간다
+const resumeRoutes = ['/resume', '/portfolio'];
 const isCurrent = (href: string) => {
-  const routes = href === '/recommend' ? recommendationRoutes : [href];
+  const routes = href === '/recommend' ? recommendationRoutes : href === '/resume' ? resumeRoutes : [href];
   return routes.some((route) => {
     const target = withBase(route).replace(/\/$/, '');
     return here === target || (route !== '/' && here.startsWith(target + '/'));
