@@ -93,7 +93,9 @@ const fileName = (path: string) => {
 
 <Base title={data.title} description={data.summary}>
   <article class="detail container">
-    <a class="back" href={withBase('/portfolio')}><span aria-hidden="true">←</span> 포트폴리오</a>
+    <a class="back" href={withBase('/portfolio')} data-back data-archive-href={withBase('/archive')}>
+      <span aria-hidden="true">←</span> <span data-back-label>포트폴리오</span>
+    </a>
 
     <header class="detail-header">
       <div class="detail-header__meta">
@@ -202,6 +204,17 @@ const fileName = (path: string) => {
 
   <MemoPanel repo={profile.repo} />
 </Base>
+
+<script>
+  // 아카이브에서 들어왔으면(?from=archive) 아카이브로 돌아간다
+  if (new URLSearchParams(location.search).get('from') === 'archive') {
+    const back = document.querySelector<HTMLAnchorElement>('[data-back]');
+    if (back) {
+      back.href = back.dataset.archiveHref!;
+      back.querySelector('[data-back-label]')!.textContent = '아카이브';
+    }
+  }
+</script>
 
 <style>
   .detail {

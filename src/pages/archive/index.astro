@@ -5,14 +5,32 @@ import TypeFilter from '../../components/TypeFilter.astro';
 import Base from '../../layouts/Base.astro';
 import { publicOnly, sortByDate } from '../../lib/entries';
 import { groupByTopic } from '../../lib/study';
-import { ENTRY_TYPES, STUDY_TYPES } from '../../lib/types';
+import { ENTRY_TYPES } from '../../lib/types';
+import { issueUrl } from '../../lib/issue';
+import { loadProfile } from '../../lib/profile';
 import { withBase } from '../../lib/url';
 
+const profile = loadProfile();
+// 공부 기록 탭의 소제목. research(연구/논문)는 활동이 아니라 여기 '연구'로 간다.
+const STUDY_SECTIONS = [
+  { label: '연구', types: ['research', 'paper'] },
+  { label: '공부', types: ['course', 'study'] },
+] as const;
+const studyTypes: readonly string[] = STUDY_SECTIONS.flatMap((s) => s.types);
 const all = sortByDate(publicOnly(await getCollection('entries')));
-const isStudy = (type: string) => (STUDY_TYPES as readonly string[]).includes(type);
+const isStudy = (type: string) => studyTypes.includes(type);
 const entries = all.filter((entry) => !isStudy(entry.data.type));
-const study = groupByTopic(all.filter((entry) => isStudy(entry.data.type)));
-const studyCount = study.reduce((n, g) => n + g.items.length, 0);
+const studySections = STUDY_SECTIONS.map((s) => ({
+  label: s.label,
+  groups: groupByTopic(all.filter((entry) => (s.types as readonly string[]).includes(entry.data.type))),
+})).filter((s) => s.groups.length > 0);
+const studyCount = all.length - entries.length;
+const cardHref = (id: string) => withBase(`/portfolio/${id}/?from=archive`);
+const uploadUrl = issueUrl(profile.repo, {
+  label: 'archive',
+  title: '[기록] ',
+  body: '### 활동 메모\n\n(활동 시기, 맡은 역할, 한 일을 적어 주세요. 이미지·PDF는 이 칸에 끌어다 놓으면 첨부돼요.)\n\n### 관련 링크\n\n',
+});
 const tabs = [
   { key: 'activity', label: '활동', count: entries.length },
   { key: 'study', label: '공부 기록', count: studyCount },
@@ -34,6 +52,10 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
       <p class="eyebrow">ARCHIVE · {entries.length.toString().padStart(2, '0')}</p>
       <h1>기록은 쌓이고,<br /><span>방향이 됩니다.</span></h1>
       <p class="lede">프로젝트부터 연구, 수상, 활동까지 공개한 기록을 시간순으로 모았습니다.</p>
+      <a class="upload" href={uploadUrl} target="_blank" rel="noopener">
+        <span aria-hidden="true">+</span> 파일 올려 기록하기
+        <span class="visually-hidden">(GitHub 이슈 작성 화면이 새 탭으로 열려요)</span>
+      </a>
     </header>
 
     <div class="tablist" role="tablist" aria-label="기록 종류" data-tablist>
@@ -63,14 +85,14 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
       yearGroups.length > 0 ? (
         <div class="timeline">
           {yearGroups.map(({ year, items }) => (
-            <section class="year" aria-labelledby={`year-${year}`}>
+            <section class="year" aria-labelledby={`year-${year}`} data-filter-group>
               <div class="year__label">
                 <h2 id={`year-${year}`}>{year}</h2>
                 <span>{items.length.toString().padStart(2, '0')}</span>
               </div>
               <div class="year__entries">
                 {items.map((entry) => (
-                  <EntryCard entry={entry} href={withBase(`/portfolio/${entry.id}/`)} />
+                  <EntryCard entry={entry} href={cardHref(entry.id)} />
                 ))}
               </div>
             </section>
@@ -85,21 +107,26 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
     <div class="tabpanel" role="tabpanel" id="tabpanel-study" aria-labelledby="tab-study" hidden>
       {
         studyCount > 0 ? (
-          <div class="timeline">
-            {study.map((g) => (
-              <section class="year">
-                <div class="year__label">
-                  <h2>{g.topic}</h2>
-                  <span>{g.items.length.toString().padStart(2, '0')}</span>
-                </div>
-                <div class="year__entries">
-                  {g.items.map((entry) => (
-                    <EntryCard entry={entry} href={withBase(`/portfolio/${entry.id}/`)} />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
+          studySections.map((sec) => (
+            <section class="study-section" aria-labelledby={`study-${sec.label}`}>
+              <h2 class="study-title" id={`study-${sec.label}`}>{sec.label}</h2>
+              <div class="timeline">
+                {sec.groups.map((g) => (
+                  <section class="year">
+                    <div class="year__label">
+                      <h3>{g.topic}</h3>
+                      <span>{g.items.length.toString().padStart(2, '0')}</span>
+                    </div>
+                    <div class="year__entries">
+                      {g.items.map((entry) => (
+                        <EntryCard entry={entry} href={cardHref(entry.id)} />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </section>
+          ))
         ) : (
           <p class="empty">아직 공부 기록이 없어요. 수업·논문·공부자료를 이슈로 남기면 여기에 주제별로 모여요.</p>
         )
@@ -215,6 +242,32 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
   .tab:active {
     transform: scale(0.97);
   }
+  .upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    margin-top: 1.5rem;
+    min-height: 2.75rem;
+    padding: 0 1.125rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    font-size: 0.9375rem;
+    transition: transform 100ms ease-out;
+  }
+  .upload:active {
+    transform: scale(0.97);
+  }
+  .study-section + .study-section {
+    margin-top: clamp(3rem, 7vw, 5rem);
+  }
+  .study-title {
+    margin-bottom: 1.5rem;
+    font-size: clamp(1.5rem, 3.5vw, 2rem);
+    letter-spacing: -0.02em;
+  }
   #tabpanel-study {
     padding-top: clamp(2rem, 6vw, 4rem);
   }
@@ -226,6 +279,7 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
     opacity: 0.7;
   }
   @media (prefers-reduced-motion: reduce) {
+    .upload:active,
     .tab:active {
       transform: none;
     }
@@ -281,6 +335,10 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
     background: linear-gradient(var(--accent), color-mix(in srgb, var(--muted) 24%, transparent) 18%, transparent);
   }
 
+  .year[hidden] {
+    display: none;
+  }
+
   .year {
     display: grid;
     grid-template-columns: clamp(5.5rem, 12vw, 10rem) minmax(0, 1fr);
@@ -311,7 +369,8 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
     background: var(--bg);
   }
 
-  .year__label h2 {
+  .year__label h2,
+  .year__label h3 {
     font-family: var(--font-mono);
     font-size: clamp(0.95rem, 2vw, 1.2rem);
     letter-spacing: 0.03em;

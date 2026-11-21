@@ -42,6 +42,11 @@ const availableTypes = ENTRY_TYPES.filter((type) => types.includes(type));
         if (show) visible += 1;
       });
 
+      // 보이는 카드가 하나도 없는 묶음(예: 연도)은 통째로 숨긴다
+      scope.querySelectorAll<HTMLElement>('[data-filter-group]').forEach((group) => {
+        group.hidden = !group.querySelector('[data-type]:not([hidden])');
+      });
+
       buttons.forEach((button) => {
         button.setAttribute('aria-pressed', String(button.dataset.filter === selected));
       });
