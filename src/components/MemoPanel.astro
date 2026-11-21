@@ -70,6 +70,7 @@ const { repo } = Astro.props;
 <script>
   import { animate, type AnimationPlaybackControls } from 'motion';
   import { issueUrl, TRUNCATED_NOTE } from '../lib/issue';
+  import { canRequestHere, openIssue } from '../lib/agent';
   import { fileMemoId, memoBody, memoStore, type MemoFile } from '../lib/memo';
 
   const panel = document.querySelector<HTMLElement>('[data-memo-panel]')!;
@@ -428,12 +429,17 @@ const { repo } = Astro.props;
     flush();
     const notes = current.files.map((f) => ({ label: f.label, ref: f.ref, text: current!.notes.get(f.ref) ?? '' }));
     const body = memoBody(current.path, notes);
-    const url = issueUrl(repo, { label: 'memo', title: `[메모] ${current.title}`, body });
-    const cut = url.endsWith(encodeURIComponent(TRUNCATED_NOTE)) && !body.endsWith(TRUNCATED_NOTE);
-    window.open(url, '_blank', 'noopener');
-    status.textContent = cut
-      ? '메모가 길어서 앞부분만 담았어요. 열린 이슈에 나머지를 붙여 넣어 주세요.'
-      : `메모 ${filledCount()}개를 담았어요. GitHub에서 이슈를 제출하면 AI가 정리해요.`;
+    const opts = { label: 'memo' as const, title: `[메모] ${current.title}`, body };
+    // 사이트 대화창은 본문을 자르지 않는다. 잘림 안내는 GitHub 이슈 작성 URL로 갈 때만.
+    const here = canRequestHere();
+    const url = issueUrl(repo, opts);
+    const cut = !here && url.endsWith(encodeURIComponent(TRUNCATED_NOTE)) && !body.endsWith(TRUNCATED_NOTE);
+    openIssue(repo, opts);
+    status.textContent = here
+      ? `메모 ${filledCount()}개를 담았어요. 요청 창에서 보내면 AI가 정리해요.`
+      : cut
+        ? '메모가 길어서 앞부분만 담았어요. 열린 이슈에 나머지를 붙여 넣어 주세요.'
+        : `메모 ${filledCount()}개를 담았어요. GitHub에서 이슈를 제출하면 AI가 정리해요.`;
   });
 
   // 페이지를 떠나기 직전 디바운스 중인 내용을 저장

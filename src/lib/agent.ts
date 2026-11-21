@@ -211,6 +211,30 @@ export function createClient(repo: string, token: string) {
 
 export type AgentClient = ReturnType<typeof createClient>;
 
+/** localStorage 읽기·쓰기. 시크릿 창 등에서 막혀 있으면 읽기는 null(토큰 없음으로 취급), 쓰기는 false */
+export function readLocal(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function writeLocal(key: string, value: string | null): boolean {
+  try {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 사이트 안에서 바로 요청할 수 있는지(대화창이 있고 토큰이 저장돼 있는지) */
+export function canRequestHere(): boolean {
+  return !!document.querySelector('[data-agent-dialog]') && !!readLocal(TOKEN_KEY);
+}
+
 /** 이슈 작성 진입점: 대화창이 있으면 대화창으로, 없으면 기존처럼 이슈 작성 URL을 새 탭으로 */
 export function openIssue(repo: string, o: IssueOptions): void {
   if (document.querySelector('[data-agent-dialog]')) {

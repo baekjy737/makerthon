@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import Nav from '../components/Nav.astro';
+import AgentDialog from '../components/AgentDialog.astro';
 import { loadProfile } from '../lib/profile';
 import { fontCss, themeCss } from '../lib/theme';
 import { withBase } from '../lib/url';
@@ -48,5 +49,6 @@ const rootCss = themeCss(profile.theme) + fontCss(profile.fonts);
     <main id="main">
       <slot />
     </main>
+    <AgentDialog repo={profile.repo} />
   </body>
 </html>

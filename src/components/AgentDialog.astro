@@ -1,0 +1,967 @@
+---
+// 사이트 안 AI 요청 대화창. Base.astro에 한 번 붙는다.
+// 페이지의 이슈 작성 링크(https://github.com/<repo>/issues/new?…) 클릭과 `agent:open` 이벤트를 받아 연다.
+// 학생 PAT(localStorage `agent-token`)로 이슈를 만들고 첨부를 올리고, 10초마다 댓글을 읽어 진행을 보여 준다.
+// AI 실행은 Actions(ai.yml)가 하고, 이 창은 GitHub API만 부른다.
+interface Props {
+  /** owner/name */
+  repo: string;
+}
+const { repo } = Astro.props;
+---
+
+<dialog class="agent" data-agent-dialog data-repo={repo} aria-labelledby="agent-title">
+  <div class="sheet">
+    <header class="head">
+      <h2 id="agent-title" data-title>AI에게 요청하기</h2>
+      <button type="button" class="icon" data-close aria-label="닫기">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+        </svg>
+      </button>
+    </header>
+
+    <!-- 1. 토큰 없음 -->
+    <section class="view" data-view="auth" hidden>
+      <p class="lead">GitHub 이슈 작성 화면에서 보내거나, 토큰을 연결해 이 창에서 바로 보내고 AI의 질문에 답할 수 있어요.</p>
+      <a class="btn primary block" data-github-link href="#" target="_blank" rel="noopener">GitHub에서 열기 <span aria-hidden="true">↗</span></a>
+
+      <details class="connect" data-connect>
+        <summary>토큰 연결하고 여기서 하기</summary>
+        <form class="connect-form" data-token-form>
+          <label class="field-label" for="agent-token">GitHub 토큰</label>
+          <input id="agent-token" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required />
+          <ol class="howto">
+            <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub 토큰 만들기 ↗</a>에서 <b>Fine-grained token</b>을 만들어요.</li>
+            <li>Repository access는 <b>Only select repositories</b>로 이 사이트 저장소(<code>{repo}</code>) 하나만 고르세요.</li>
+            <li>Permissions에서 <b>Issues</b>와 <b>Contents</b>를 <b>Read and write</b>로 주세요.</li>
+          </ol>
+          <p class="note">토큰은 이 브라우저에만 저장되고 GitHub API 요청에만 쓰여요. 공용 컴퓨터에서는 쓰고 나서 "토큰 지우기"를 눌러 주세요.</p>
+          <button type="submit" class="btn">연결하기</button>
+          <p class="err" data-token-err hidden></p>
+        </form>
+      </details>
+    </section>
+
+    <!-- 2. 작성 -->
+    <section class="view" data-view="compose" hidden>
+      <form class="compose" data-compose>
+        <label class="field-label" for="agent-issue-title">제목</label>
+        <input id="agent-issue-title" class="input" data-issue-title required maxlength="200" />
+
+        <label class="field-label" for="agent-issue-body">내용</label>
+        <textarea id="agent-issue-body" class="input body" data-issue-body rows="10"></textarea>
+
+        <div class="files">
+          <label class="file-pick">
+            <input type="file" data-files multiple accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" />
+            <span>이미지·PDF 첨부</span>
+          </label>
+          <ul class="file-list" data-file-list></ul>
+          <p class="note">파일당 10MB까지. 저장소가 공개라면 첨부는 AI가 처리하는 동안 GitHub에서 볼 수 있어요(반영되면 지워져요).</p>
+        </div>
+
+        <div class="row">
+          <button type="submit" class="btn primary" data-send>보내기</button>
+          <a class="btn ghost" data-github-link href="#" target="_blank" rel="noopener">GitHub에서 열기 <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="sending" data-sending aria-live="polite" hidden></p>
+      </form>
+    </section>
+
+    <!-- 3. 진행 -->
+    <section class="view" data-view="progress" hidden>
+      <div class="status-row">
+        <span class="badge" data-badge></span>
+        <a class="issue-link" data-issue-link href="#" target="_blank" rel="noopener"></a>
+      </div>
+      <p class="slow" data-slow hidden>
+        응답이 늦어요. <a data-actions-link href="#" target="_blank" rel="noopener">Actions 실행 목록 ↗</a>에서 진행 상황을 확인해 보세요.
+      </p>
+      <ol class="chat" data-chat aria-live="polite"></ol>
+      <form class="answer" data-answer hidden>
+        <label class="field-label" for="agent-answer">답변</label>
+        <textarea id="agent-answer" class="input" data-answer-text rows="4" required></textarea>
+        <button type="submit" class="btn primary">답하기</button>
+      </form>
+      <p class="result" data-result hidden></p>
+    </section>
+
+    <!-- 4. 오류 -->
+    <section class="view" data-view="error" hidden>
+      <p class="err big" data-error-text></p>
+      <div class="row">
+        <button type="button" class="btn primary" data-retry>다시 시도</button>
+        <button type="button" class="btn" data-clear-token-inline hidden>토큰 지우기</button>
+        <a class="btn ghost" data-github-link href="#" target="_blank" rel="noopener">GitHub에서 열기 <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+
+    <!-- 최근 요청 -->
+    <section class="view" data-view="recent" hidden>
+      <ul class="recent" data-recent-list></ul>
+      <p class="note" data-recent-empty hidden>아직 이 브라우저에서 보낸 요청이 없어요.</p>
+    </section>
+
+    <footer class="foot" data-foot hidden>
+      <button type="button" class="link" data-show-recent>최근 요청</button>
+      <button type="button" class="link" data-clear-token>토큰 지우기</button>
+    </footer>
+  </div>
+</dialog>
+
+<script>
+  import { animate } from 'motion';
+  import {
+    GitHubError,
+    POLL_MS,
+    RECENT_KEY,
+    TOKEN_KEY,
+    createClient,
+    issueStatus,
+    parseIssueUrl,
+    readLocal,
+    writeLocal,
+    type AgentStatus,
+    type Comment,
+    type RecentRequest,
+  } from '../lib/agent';
+  import { issueUrl, type IssueOptions } from '../lib/issue';
+
+  const dialog = document.querySelector<HTMLDialogElement>('[data-agent-dialog]')!;
+  const repo = dialog.dataset.repo!;
+  const $ = <T extends Element = HTMLElement>(sel: string) => dialog.querySelector<T>(sel)!;
+  const titleEl = $('[data-title]');
+  const foot = $('[data-foot]');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  type View = 'auth' | 'compose' | 'progress' | 'error' | 'recent';
+  const TITLES: Record<View, string> = {
+    auth: 'AI에게 요청하기',
+    compose: 'AI에게 요청하기',
+    progress: '요청 진행',
+    error: '요청하지 못했어요',
+    recent: '최근 요청',
+  };
+
+  let pending: IssueOptions | null = null;
+  let current: { number: number; title: string; createdAt: string; url: string } | null = null;
+  let timer: number | undefined;
+  let lastStatus: AgentStatus | null = null;
+
+  const token = () => readLocal(TOKEN_KEY);
+
+  function show(view: View) {
+    dialog.querySelectorAll<HTMLElement>('[data-view]').forEach((v) => (v.hidden = v.dataset.view !== view));
+    titleEl.textContent = TITLES[view];
+    foot.hidden = !token();
+    if (view !== 'progress') stopPolling();
+  }
+
+  function setGithubLinks() {
+    const href = pending ? issueUrl(repo, pending) : `https://github.com/${repo}/issues/new/choose`;
+    dialog.querySelectorAll<HTMLAnchorElement>('[data-github-link]').forEach((a) => (a.href = href));
+  }
+
+  // --- 열기·닫기 (스프링, reduced-motion이면 페이드) ---
+  function openDialog() {
+    if (!dialog.open) {
+      dialog.showModal();
+      const sheet = $('.sheet');
+      if (reduce.matches) animate(sheet, { opacity: [0, 1] }, { duration: 0.2 });
+      else animate(sheet, { opacity: [0, 1], y: [24, 0], scale: [0.98, 1] }, { type: 'spring', bounce: 0, duration: 0.4 });
+    }
+  }
+
+  let closing = false;
+  function closeDialog() {
+    if (!dialog.open || closing) return;
+    closing = true;
+    stopPolling();
+    const sheet = $('.sheet');
+    const anim = reduce.matches
+      ? animate(sheet, { opacity: 0 }, { duration: 0.15 })
+      : animate(sheet, { opacity: 0, y: 24, scale: 0.98 }, { type: 'spring', bounce: 0, duration: 0.3 });
+    // 백그라운드 탭처럼 애니메이션 프레임이 멈춰도 닫히도록 시간 제한을 둔다
+    const finish = () => {
+      if (!closing) return;
+      closing = false;
+      dialog.close();
+    };
+    anim.then(finish);
+    window.setTimeout(finish, 450);
+  }
+
+  dialog.addEventListener('cancel', (ev) => {
+    ev.preventDefault();
+    closeDialog();
+  });
+  dialog.addEventListener('close', stopPolling);
+  $('[data-close]').addEventListener('click', closeDialog);
+  // 바깥(배경) 클릭으로 닫기
+  dialog.addEventListener('click', (ev) => {
+    if (ev.target === dialog) closeDialog();
+  });
+
+  // --- 진입점 ---
+  function openWith(o: IssueOptions) {
+    pending = o;
+    setGithubLinks();
+    if (token()) {
+      fillCompose(o);
+      show('compose');
+    } else {
+      show('auth');
+    }
+    openDialog();
+    (dialog.querySelector<HTMLElement>('[data-view]:not([hidden]) input, [data-view]:not([hidden]) textarea, [data-view]:not([hidden]) a.primary') ?? $('[data-close]')).focus();
+  }
+
+  const prefix = `https://github.com/${repo}/issues/new`;
+  document.addEventListener(
+    'click',
+    (ev) => {
+      if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+      const a = (ev.target as Element | null)?.closest?.<HTMLAnchorElement>('a[href]');
+      if (!a || dialog.contains(a) || !a.href.startsWith(prefix)) return;
+      const o = parseIssueUrl(a.href, repo);
+      if (!o) return;
+      ev.preventDefault();
+      openWith(o);
+    },
+    true,
+  );
+  window.addEventListener('agent:open', (ev) => openWith((ev as CustomEvent<IssueOptions>).detail));
+
+  // --- 토큰 ---
+  $('[data-token-form]').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const input = $<HTMLInputElement>('#agent-token');
+    const value = input.value.trim();
+    const err = $('[data-token-err]');
+    if (!value) return;
+    if (!writeLocal(TOKEN_KEY, value)) {
+      err.textContent = '이 브라우저에는 토큰을 저장할 수 없어요. "GitHub에서 열기"를 써 주세요.';
+      err.hidden = false;
+      return;
+    }
+    err.hidden = true;
+    input.value = '';
+    if (pending) {
+      fillCompose(pending);
+      show('compose');
+    } else {
+      showRecent();
+    }
+  });
+
+  function clearToken() {
+    writeLocal(TOKEN_KEY, null);
+    show('auth');
+  }
+  $('[data-clear-token]').addEventListener('click', clearToken);
+  $('[data-clear-token-inline]').addEventListener('click', clearToken);
+
+  // --- 작성·보내기 ---
+  const fileInput = $<HTMLInputElement>('[data-files]');
+  const fileList = $('[data-file-list]');
+  const sendBtn = $<HTMLButtonElement>('[data-send]');
+  const sending = $('[data-sending]');
+
+  function fillCompose(o: IssueOptions) {
+    $<HTMLInputElement>('[data-issue-title]').value = o.title;
+    $<HTMLTextAreaElement>('[data-issue-body]').value = o.body;
+    fileInput.value = '';
+    renderFiles();
+    sending.hidden = true;
+    sendBtn.disabled = false;
+  }
+
+  const mb = (n: number) => (n / 1024 / 1024).toFixed(n < 1024 * 1024 ? 2 : 1) + 'MB';
+  function renderFiles() {
+    fileList.replaceChildren(
+      ...[...(fileInput.files ?? [])].map((f) => {
+        const li = document.createElement('li');
+        li.textContent = `${f.name} · ${mb(f.size)}`;
+        if (f.size > 10 * 1024 * 1024) {
+          li.classList.add('bad');
+          li.textContent += ' · 10MB를 넘어요';
+        }
+        return li;
+      }),
+    );
+  }
+  fileInput.addEventListener('change', renderFiles);
+
+  function showError(e: unknown) {
+    const status = e instanceof GitHubError ? e.status : 0;
+    $('[data-error-text]').textContent = e instanceof Error ? e.message : '요청하지 못했어요.';
+    $('[data-clear-token-inline]').hidden = ![401, 403, 404].includes(status);
+    show('error');
+  }
+
+  // 보내기 전 오류면 작성 화면(내용 그대로)으로, 진행 확인 중 오류면 그 요청의 진행 화면으로
+  $('[data-retry]').addEventListener('click', () => {
+    if (!token()) return show('auth');
+    if (pending) return show('compose');
+    if (current) return openProgress(current);
+    showRecent();
+  });
+
+  $('[data-compose]').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const t = token();
+    if (!t || !pending) return show('auth');
+    const title = $<HTMLInputElement>('[data-issue-title]').value.trim();
+    let body = $<HTMLTextAreaElement>('[data-issue-body]').value;
+    const files = [...(fileInput.files ?? [])];
+    const client = createClient(repo, t);
+    sendBtn.disabled = true;
+    sending.hidden = false;
+    try {
+      // 이슈를 만들기 전에 올린다. 업로드가 하나라도 실패하면 이슈는 만들지 않는다.
+      if (files.length) sending.textContent = `첨부 ${files.length}개를 올리는 중…`;
+      const lines = await client.uploadFiles(files);
+      if (lines.length) body = `${body.trimEnd()}\n\n${lines.join('\n')}`;
+      sending.textContent = '요청을 보내는 중…';
+      const issue = await client.createIssue({ label: pending.label, title, body });
+      const recent: RecentRequest = { number: issue.number, title, createdAt: issue.createdAt };
+      saveRecent(recent);
+      pending = null;
+      setGithubLinks();
+      openProgress({ ...recent, url: issue.url });
+    } catch (e) {
+      showError(e);
+    } finally {
+      sendBtn.disabled = false;
+      sending.hidden = true;
+    }
+  });
+
+  // --- 최근 요청 ---
+  function recentList(): RecentRequest[] {
+    try {
+      const v = JSON.parse(readLocal(RECENT_KEY) ?? '[]');
+      return Array.isArray(v) ? v.filter((x) => x && Number.isInteger(x.number) && typeof x.title === 'string' && typeof x.createdAt === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+  function saveRecent(r: RecentRequest) {
+    writeLocal(RECENT_KEY, JSON.stringify([r, ...recentList().filter((x) => x.number !== r.number)].slice(0, 5)));
+  }
+  function showRecent() {
+    const list = recentList();
+    const ul = $('[data-recent-list]');
+    ul.replaceChildren(
+      ...list.map((r) => {
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'recent-item';
+        const t = document.createElement('span');
+        t.textContent = r.title || `요청 #${r.number}`;
+        const m = document.createElement('span');
+        m.className = 'meta';
+        m.textContent = `#${r.number} · ${new Date(r.createdAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+        b.append(t, m);
+        b.addEventListener('click', () => openProgress({ ...r, url: `https://github.com/${repo}/issues/${r.number}` }));
+        li.append(b);
+        return li;
+      }),
+    );
+    $('[data-recent-empty]').hidden = list.length > 0;
+    show('recent');
+  }
+  $('[data-show-recent]').addEventListener('click', () => {
+    showRecent();
+    openDialog();
+  });
+
+  // --- 진행 ---
+  const BADGES: Record<AgentStatus, string> = { working: '작업 중', question: '질문이 왔어요', done: '반영됨', failed: '실패' };
+  const chat = $('[data-chat]');
+  const answer = $<HTMLFormElement>('[data-answer]');
+  const result = $('[data-result]');
+
+  function stopPolling() {
+    window.clearInterval(timer);
+    timer = undefined;
+  }
+
+  function openProgress(r: { number: number; title: string; createdAt: string; url: string }) {
+    current = r;
+    lastStatus = null;
+    const link = $<HTMLAnchorElement>('[data-issue-link]');
+    link.href = r.url;
+    link.textContent = `#${r.number} ${r.title} ↗`;
+    $<HTMLAnchorElement>('[data-actions-link]').href = `https://github.com/${repo}/actions`;
+    chat.replaceChildren();
+    answer.hidden = true;
+    result.hidden = true;
+    paintStatus('working', false);
+    show('progress');
+    openDialog();
+    poll();
+    timer = window.setInterval(poll, POLL_MS);
+  }
+
+  function paintStatus(status: AgentStatus, slow: boolean) {
+    const badge = $('[data-badge]');
+    badge.textContent = BADGES[status];
+    badge.dataset.status = status;
+    $('[data-slow]').hidden = !slow;
+  }
+
+  const clean = (body: string) => body.replace(/<!--[\s\S]*?-->/g, '').trim();
+
+  function renderChat(comments: Comment[]) {
+    chat.replaceChildren(
+      ...comments
+        .map((c) => ({ c, text: clean(c.body) }))
+        .filter(({ text }) => text)
+        .map(({ c, text }) => {
+          const li = document.createElement('li');
+          li.className = c.bot ? 'msg ai' : 'msg me';
+          const who = document.createElement('span');
+          who.className = 'who';
+          who.textContent = c.bot ? 'AI' : '나';
+          const p = document.createElement('p');
+          p.textContent = text; // innerHTML 금지
+          li.append(who, p);
+          return li;
+        }),
+    );
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function paintResult(status: AgentStatus, comments: Comment[]) {
+    const last = [...comments].reverse().find((c) => c.bot)?.body ?? '';
+    result.replaceChildren();
+    result.hidden = status !== 'done' && status !== 'failed';
+    if (status === 'done') {
+      const pr = last.match(/PR #(\d+)/);
+      result.append('반영됐어요. 사이트에는 배포가 끝나면 보여요.');
+      if (pr) {
+        const a = document.createElement('a');
+        a.href = `https://github.com/${repo}/pull/${pr[1]}`;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = ` PR #${pr[1]} 보기 ↗`;
+        result.append(a);
+      }
+    } else if (status === 'failed') {
+      const log = last.match(/https:\/\/github\.com\/[^\s]+\/actions\/runs\/\d+/);
+      result.append('반영하지 못했어요. 내용을 고쳐 다시 요청하거나 실행 로그를 확인해 주세요.');
+      if (log) {
+        const a = document.createElement('a');
+        a.href = log[0];
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = ' 실행 로그 ↗';
+        result.append(a);
+      }
+    }
+  }
+
+  async function poll() {
+    const t = token();
+    const r = current;
+    if (!t || !r || !dialog.open) return stopPolling();
+    try {
+      const comments = await createClient(repo, t).comments(r.number);
+      if (current !== r) return; // 그 사이 다른 요청을 열었으면 버린다
+      const { status, slow } = issueStatus(comments, r.createdAt, new Date());
+      renderChat(comments);
+      paintStatus(status, slow);
+      paintResult(status, comments);
+      if (status === 'question' && lastStatus !== 'question') {
+        answer.hidden = false;
+        $<HTMLTextAreaElement>('[data-answer-text]').focus();
+      }
+      if (status !== 'question') answer.hidden = true;
+      lastStatus = status;
+      if (status === 'done' || status === 'failed') stopPolling();
+    } catch (e) {
+      stopPolling();
+      showError(e);
+    }
+  }
+
+  answer.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const t = token();
+    const r = current;
+    const box = $<HTMLTextAreaElement>('[data-answer-text]');
+    const text = box.value.trim();
+    if (!t || !r || !text) return;
+    const btn = answer.querySelector<HTMLButtonElement>('button')!;
+    btn.disabled = true;
+    try {
+      await createClient(repo, t).reply(r.number, text);
+      box.value = '';
+      answer.hidden = true;
+      lastStatus = 'working';
+      paintStatus('working', false);
+      stopPolling();
+      poll();
+      timer = window.setInterval(poll, POLL_MS);
+    } catch (e) {
+      showError(e);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .agent {
+    width: min(36rem, calc(100vw - 2rem));
+    max-width: none;
+    max-height: min(46rem, calc(100dvh - 2rem));
+    margin: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    overflow: visible;
+  }
+  .agent::backdrop {
+    background: rgb(0 0 0 / 0.32);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+  .sheet {
+    display: flex;
+    flex-direction: column;
+    max-height: inherit;
+    padding: 1.25rem 1.5rem 1.25rem;
+    border-radius: 1.25rem;
+    background: var(--bg);
+    border: 1px solid color-mix(in srgb, var(--fg) 10%, var(--bg));
+    box-shadow:
+      0 24px 64px -16px rgb(0 0 0 / 0.35),
+      0 2px 8px rgb(0 0 0 / 0.08);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .head h2 {
+    font-size: 1.1875rem;
+    letter-spacing: -0.01em;
+  }
+  .icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    margin-right: -0.375rem;
+    border: 0;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--fg) 7%, var(--bg));
+    cursor: pointer;
+  }
+  .icon:hover {
+    background: color-mix(in srgb, var(--fg) 12%, var(--bg));
+  }
+
+  .view[hidden],
+  .foot[hidden],
+  [hidden] {
+    display: none !important;
+  }
+  .lead {
+    color: color-mix(in srgb, var(--fg) 80%, var(--muted));
+    line-height: 1.65;
+    margin-bottom: 1rem;
+  }
+  .note {
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  .err {
+    color: #dc2626;
+    font-size: 0.875rem;
+  }
+  .err.big {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--fg);
+    padding: 0.875rem 1rem;
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, #dc2626 9%, var(--bg));
+    border: 1px solid color-mix(in srgb, #dc2626 35%, var(--bg));
+    margin-bottom: 1rem;
+  }
+
+  /* 버튼 */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 2.75rem;
+    padding: 0 1.125rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--fg) 18%, var(--bg));
+    background: var(--bg);
+    font-size: 0.9375rem;
+    cursor: pointer;
+    transition:
+      transform 100ms ease-out,
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+  .btn:hover {
+    border-color: color-mix(in srgb, var(--fg) 40%, var(--bg));
+  }
+  .btn:active {
+    transform: scale(0.97);
+  }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-family: var(--font-ko-bold);
+  }
+  .btn.ghost {
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .btn.ghost:hover {
+    color: var(--fg);
+  }
+  .btn.block {
+    width: 100%;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+    transform: none;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  .link {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  .link:hover {
+    color: var(--fg);
+  }
+
+  /* 입력 */
+  .field-label {
+    display: block;
+    margin: 0.875rem 0 0.375rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .input {
+    display: block;
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--fg) 16%, var(--bg));
+    background: var(--bg);
+    line-height: 1.6;
+  }
+  .input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  textarea.input {
+    resize: vertical;
+  }
+  .body {
+    min-height: 10rem;
+    font-size: 0.9375rem;
+  }
+
+  /* 토큰 연결 */
+  .connect {
+    margin-top: 1rem;
+    border-top: 1px solid color-mix(in srgb, var(--fg) 10%, var(--bg));
+    padding-top: 0.75rem;
+  }
+  .connect summary {
+    cursor: pointer;
+    font-family: var(--font-ko-bold);
+    font-size: 0.9375rem;
+    padding: 0.375rem 0;
+  }
+  .connect-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .connect-form .btn {
+    align-self: flex-start;
+    margin-top: 0.25rem;
+  }
+  .howto {
+    margin: 0.25rem 0 0;
+    padding-left: 1.25rem;
+    font-size: 0.875rem;
+    line-height: 1.65;
+  }
+  .howto a {
+    color: var(--accent);
+  }
+  .howto code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+
+  /* 첨부 */
+  .files {
+    margin-top: 0.875rem;
+  }
+  .file-pick {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 1px dashed color-mix(in srgb, var(--fg) 30%, var(--bg));
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+  .file-pick:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .file-pick input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .file-list {
+    margin: 0.5rem 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.8125rem;
+  }
+  .file-list :global(li) {
+    padding: 0.25rem 0;
+    word-break: break-all;
+  }
+  .file-list :global(li.bad) {
+    color: #dc2626;
+  }
+  .sending {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+
+  /* 진행 */
+  .status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-family: var(--font-ko-bold);
+    background: color-mix(in srgb, var(--fg) 8%, var(--bg));
+  }
+  .badge[data-status='working']::before {
+    content: '';
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--fg) 25%, transparent);
+    border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+  }
+  .badge[data-status='question'] {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+    color: var(--accent);
+  }
+  .badge[data-status='done'] {
+    background: color-mix(in srgb, #16a34a 14%, var(--bg));
+    color: #15803d;
+  }
+  .badge[data-status='failed'] {
+    background: color-mix(in srgb, #dc2626 12%, var(--bg));
+    color: #b91c1c;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .issue-link {
+    font-size: 0.875rem;
+    color: var(--muted);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .issue-link:hover {
+    color: var(--fg);
+  }
+  .slow {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, #f59e0b 12%, var(--bg));
+  }
+  .slow a {
+    color: var(--accent);
+  }
+  .chat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    margin: 1rem 0 0;
+    padding: 0;
+    list-style: none;
+    max-height: 22rem;
+    overflow-y: auto;
+  }
+  .chat:empty::before {
+    content: 'AI가 요청을 읽고 있어요. 보통 몇 분 걸려요.';
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .chat :global(.msg) {
+    max-width: 88%;
+    padding: 0.625rem 0.875rem;
+    border-radius: 1rem;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+  .chat :global(.msg p) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .chat :global(.msg .who) {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--muted);
+    margin-bottom: 0.125rem;
+  }
+  .chat :global(.msg.ai) {
+    align-self: flex-start;
+    background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+    border-bottom-left-radius: 0.375rem;
+  }
+  .chat :global(.msg.me) {
+    align-self: flex-end;
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+    border-bottom-right-radius: 0.375rem;
+  }
+  .answer {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .answer .btn {
+    align-self: flex-end;
+  }
+  .result {
+    margin-top: 1rem;
+    font-size: 0.9375rem;
+  }
+  .result :global(a) {
+    color: var(--accent);
+  }
+
+  /* 최근 요청 */
+  .recent {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .recent :global(.recent-item) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    width: 100%;
+    padding: 0.75rem 0.5rem;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--fg) 8%, var(--bg));
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 0.5rem;
+  }
+  .recent :global(.recent-item:hover) {
+    background: color-mix(in srgb, var(--fg) 5%, var(--bg));
+  }
+  .recent :global(.recent-item .meta) {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid color-mix(in srgb, var(--fg) 8%, var(--bg));
+  }
+
+  /* 휴대폰: 아래에서 올라오는 시트 */
+  @media (max-width: 560px) {
+    .agent {
+      width: 100vw;
+      max-height: 92dvh;
+      margin: auto 0 0;
+    }
+    .sheet {
+      border-radius: 1.25rem 1.25rem 0 0;
+      padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn:active {
+      transform: none;
+    }
+    .badge[data-status='working']::before {
+      animation: none;
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .agent::backdrop {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      background: rgb(0 0 0 / 0.5);
+    }
+  }
+</style>
