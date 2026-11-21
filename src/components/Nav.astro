@@ -28,12 +28,64 @@ const isCurrent = (href: string) => {
     <nav class="glass-tabs" aria-label="주요 메뉴">
       <ul>
         {items.map(({ href, label }) => (
-          <li><a href={withBase(href)} aria-current={isCurrent(href) ? 'page' : undefined}>{label}</a></li>
+          <li>
+            <a href={withBase(href)} aria-current={isCurrent(href) ? 'page' : undefined}>
+              {isCurrent(href) && <span class="tab-indicator" aria-hidden="true"></span>}
+              {label}
+            </a>
+          </li>
         ))}
       </ul>
     </nav>
   </div>
 </header>
+
+<script>
+  import { animate } from 'motion';
+
+  const tabs = document.querySelector('.glass-tabs');
+  const current = tabs?.querySelector<HTMLAnchorElement>('[aria-current="page"]');
+  const indicator = current?.querySelector<HTMLElement>('.tab-indicator');
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const storageKey = 'makerthon:tab-slide:' + import.meta.env.BASE_URL;
+
+  if (tabs && current && indicator) {
+    try {
+      const pending = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null');
+      sessionStorage.removeItem(storageKey);
+      if (!reducedMotion.matches && pending?.to === window.location.pathname.replace(/\/$/, '')) {
+        const previous = Array.from(tabs.querySelectorAll<HTMLAnchorElement>('a'))
+          .find((link) => link.pathname === pending.from);
+        if (previous && previous !== current) {
+          const from = previous.getBoundingClientRect();
+          const to = current.getBoundingClientRect();
+          animate(indicator, {
+            x: [from.left - to.left, 0],
+            y: [from.top - to.top, 0],
+            scaleX: [from.width / to.width, 1],
+          }, { type: 'spring', stiffness: 420, damping: 41, mass: 1 });
+        }
+      }
+    } catch {
+      // The active tab is already marked in HTML.
+    }
+
+    tabs.addEventListener('click', (event) => {
+      if (reducedMotion.matches || event.defaultPrevented || event.button !== 0 ||
+          event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const next = event.target instanceof Element ? event.target.closest('a') : null;
+      if (!next || next === current || next.origin !== location.origin) return;
+      try {
+        sessionStorage.setItem(storageKey, JSON.stringify({
+          from: current.pathname,
+          to: next.pathname.replace(/\/$/, ''),
+        }));
+      } catch {
+        // Follow the link normally if browser storage is unavailable.
+      }
+    });
+  }
+</script>
 
 <style>
   .site-nav {
@@ -70,6 +122,7 @@ const isCurrent = (href: string) => {
   }
 
   ul {
+    isolation: isolate;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
@@ -88,6 +141,7 @@ const isCurrent = (href: string) => {
   }
 
   .glass-tabs a {
+    position: relative;
     justify-content: center;
     padding-inline: clamp(0.5rem, 1.4vw, 1.15rem);
     font-family: var(--font-mono);
@@ -106,9 +160,14 @@ const isCurrent = (href: string) => {
     background: color-mix(in srgb, var(--fg) 6%, transparent);
   }
 
-  .glass-tabs a[aria-current='page'],
-  .glass-tabs a:active {
+  .tab-indicator {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
     background: color-mix(in srgb, var(--fg) 11%, var(--bg));
+    transform-origin: left center;
+    pointer-events: none;
   }
 
   .monogram {
@@ -142,7 +201,7 @@ const isCurrent = (href: string) => {
       box-shadow: none;
     }
 
-    .glass-tabs a[aria-current='page'] {
+    .tab-indicator {
       box-shadow: inset 0 0 0 1px var(--fg);
     }
   }
