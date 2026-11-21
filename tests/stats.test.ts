@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { archiveStats } from '../src/lib/stats';
+import { archiveStats, lastLabel } from '../src/lib/stats';
 import type { EntryType } from '../src/lib/types';
 
 const e = (id: string, type: EntryType, date: string, pub = true) => ({
@@ -29,4 +29,9 @@ test('같은 날이면 0, 미래 날짜는 0으로', () => {
   const now = new Date('2026-11-21T15:00:00Z');
   expect(archiveStats([e('a', 'etc', '2026-11-21')], now).daysSinceLast).toBe(0);
   expect(archiveStats([e('a', 'etc', '2026-12-01')], now).daysSinceLast).toBe(0);
+});
+
+test('마지막 기록 문구: 0이면 오늘', () => {
+  expect(lastLabel(0)).toBe('오늘');
+  expect(lastLabel(20)).toBe('20일 전');
 });
