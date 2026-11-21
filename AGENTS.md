@@ -68,6 +68,7 @@ Task 1이 끝나야 대부분의 작업을 시작할 수 있다. 그래서 두 �
 | 19 지원서 작성 화면 | Claude-4 | Task 15 병합 후 |
 | 20 RECOMMEND 화면 | GPT-2 | Task 14·15 병합 후 |
 | 21 링크드인·리멤버 내보내기 | Claude-2 | Task 15를 끝낸 뒤 이어서 |
+| 15b 연구인턴 공고 합치기(`fromResearchProgram`·`loadOpenings`에 `research-internships.json` 51건) | Claude-3 | 지금. 계획 Task 15의 `fromResearchProgram` 항목대로 `src/lib/openings.ts`·`tests/openings.test.ts`를 고친다 |
 
 ### 디자인 개선 (GPT-3 고정)
 
