@@ -53,6 +53,22 @@ Task 1이 끝나야 대부분의 작업을 시작할 수 있다. 그래서 두 �
 | 13 추천 카드·상세·공부 계획 | Claude-4 | Task 10 병합 후 (`/match` 상세는 Task 9 병합 후) |
 | 예비 | GPT-2 | 막힌 Task를 리더 지시로 넘겨받는다 |
 
+### 3단계: Apply·Recommend 재구성 (Task 14~21)
+
+- 사양은 `docs/superpowers/specs/2026-11-21-apply-recommend-design.md`, 계획은 `docs/superpowers/plans/2026-11-21-apply-recommend.md`다.
+- 이번 단계는 사용자 지시로 리더(Claude-1)도 Task 14를 맡는다. 다른 사람 PR의 리뷰와 병합은 그대로 Claude-1이 한다.
+
+| Task | 담당 | 시작 조건 |
+|---|---|---|
+| 14 아카이브 정리·파일 올리기·RECOMMEND 뼈대 | Claude-1 | 지금 |
+| 15 스키마·공고 데이터·샘플 | Claude-2 | 지금 |
+| 16 공고 수집 AI(이슈·주간 워크플로) | GPT-1 | Task 15 병합 후 (스킬 문서 초안은 지금) |
+| 17 지원서 양식·추천 스킬 확장 | AGY-1 | Task 15 병합 후 (스킬 문서 초안은 지금) |
+| 18 APPLY 모집 공고 보드 | Claude-3 | Task 14·15 병합 후 |
+| 19 지원서 작성 화면 | Claude-4 | Task 15 병합 후 |
+| 20 RECOMMEND 화면 | GPT-2 | Task 14·15 병합 후 |
+| 21 링크드인·리멤버 내보내기 | Claude-2 | Task 15를 끝낸 뒤 이어서 |
+
 ### 디자인 개선 (GPT-3 고정)
 
 - **작업 전에 반드시 `.claude/skills/apple-design/SKILL.md`를 끝까지 읽는다.** 디자인 판단은 이 파일을 기준으로 하고, 색·폰트는 계획의 기본값과 `profile.yml`이 우선한다.
