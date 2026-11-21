@@ -1,0 +1,87 @@
+---
+import Base from '../../layouts/Base.astro';
+import RecommendPreview from '../../components/RecommendPreview.astro';
+import { issueUrl } from '../../lib/issue';
+import { loadProfile } from '../../lib/profile';
+
+const profile = loadProfile();
+// recommend 이슈 템플릿(.github/ISSUE_TEMPLATE/recommend.yml)과 같은 틀
+const recommendUrl = issueUrl(profile.repo, {
+  label: 'recommend',
+  title: '[추천] 다음 공부와 진로',
+  body: '### 특히 알고 싶은 분야\n\n(비워 두면 프로필의 관심사와 공개 기록을 바탕으로 추천합니다.)\n',
+});
+---
+
+<Base title="추천" description="관심사와 공부 기록을 바탕으로 다음 공부와 연구실을 탐색합니다.">
+  <section class="container recommend" aria-labelledby="recommend-title">
+    <h1 id="recommend-title">추천</h1>
+    <p class="lede">관심 분야와 공부 기록을 근거로 다음에 공부할 것과 맞는 연구실·기회를 보여 줘요.</p>
+    <div class="actions">
+      <a class="action primary" href={recommendUrl} target="_blank" rel="noopener">
+        추천 받기
+        <span class="visually-hidden">(GitHub 이슈 작성 화면이 새 탭으로 열려요)</span>
+      </a>
+    </div>
+  </section>
+  <RecommendPreview />
+</Base>
+
+<style>
+  .recommend {
+    max-width: 64rem;
+    padding-block: clamp(2rem, 6vw, 5rem) 0;
+  }
+
+  h1 {
+    margin-bottom: 1rem;
+    font-size: clamp(2.75rem, 8vw, 5rem);
+    letter-spacing: -0.045em;
+  }
+
+  .lede {
+    margin-bottom: 1.5rem;
+    color: var(--muted);
+  }
+
+  .actions {
+    display: flex;
+    margin-bottom: clamp(2rem, 5vw, 3rem);
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .action {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0 1.125rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+    font-size: 0.9375rem;
+    transition:
+      transform 100ms ease-out,
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+  .action:hover {
+    border-color: color-mix(in srgb, var(--fg) 40%, transparent);
+  }
+  .action.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-family: var(--font-ko-bold);
+  }
+  .action:active {
+    transform: scale(0.97);
+  }
+  .plus {
+    margin-right: 0.3em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .action:active {
+      transform: none;
+    }
+  }
+</style>

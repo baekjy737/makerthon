@@ -48,6 +48,11 @@ const affiliation = [data.org, data.role].filter(Boolean).join(' · ');
 </Element>
 
 <style>
+  /* display: flex가 hidden 속성을 덮지 않게 (종류 필터) */
+  .entry-card[hidden] {
+    display: none;
+  }
+
   .entry-card {
     position: relative;
     display: flex;

@@ -41,6 +41,10 @@ const { repo } = Astro.props;
         <section class="memo-files" aria-labelledby="memo-files-label">
           <p class="memo-label" id="memo-files-label">파일 <span class="memo-count" data-memo-file-count></span></p>
           <ul class="file-list" data-memo-files></ul>
+          <a class="memo-add-file" data-memo-add-file target="_blank" rel="noopener">
+            <span aria-hidden="true">+</span> 이 항목에 파일 추가
+            <span class="visually-hidden">(GitHub 이슈 작성 화면이 새 탭으로 열려요)</span>
+          </a>
         </section>
 
         <label class="memo-label" for="memo-text" data-memo-text-label>메모</label>
@@ -80,6 +84,7 @@ const { repo } = Astro.props;
   const send = panel.querySelector<HTMLButtonElement>('[data-memo-send]')!;
   const fullBtn = panel.querySelector<HTMLButtonElement>('[data-memo-full]')!;
   const preview = panel.querySelector<HTMLElement>('[data-memo-preview]')!;
+  const addFile = panel.querySelector<HTMLAnchorElement>('[data-memo-add-file]')!;
   const repo = panel.dataset.repo!;
 
   // 시크릿 창 등에서는 localStorage 접근 자체가 throw할 수 있다
@@ -333,6 +338,12 @@ const { repo } = Astro.props;
       selected: 0,
     };
     titleEl.textContent = current.title;
+    // memo 이슈 템플릿(항목 경로·메모)과 같은 틀. 파일은 메모 칸에 끌어다 놓으면 GitHub이 올려 준다.
+    addFile.href = issueUrl(repo, {
+      label: 'memo',
+      title: `[메모] ${current.title}`,
+      body: `### 항목 경로\n\n${current.path}\n\n### 메모\n\n(추가할 이미지·PDF를 이 칸에 끌어다 놓고, 어떤 자료인지 한 줄 적어 주세요.)\n`,
+    });
     typeEl.textContent = btn.dataset.typeLabel ?? '';
     renderFiles();
     trigger?.setAttribute('aria-expanded', 'false');
@@ -505,6 +516,18 @@ const { repo } = Astro.props;
     transform: scale(0.94);
   }
 
+  .memo-add-file {
+    display: inline-flex;
+    gap: 0.35em;
+    margin-top: 0.5rem;
+    color: var(--accent);
+    font-size: 0.875rem;
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+  }
+  .memo-add-file:hover {
+    text-decoration: underline;
+  }
   .memo-label {
     display: block;
     font-size: 0.8125rem;
