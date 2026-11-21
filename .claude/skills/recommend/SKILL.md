@@ -6,7 +6,12 @@ description: 공개 공부·활동 기록을 근거로 다음 공부와 연구�
 # 다음 공부와 진로 추천
 
 1. `profile.yml`의 `interests`와 요청자가 특히 알고 싶은 분야를 확인한다. `content/entries/`의 공개 항목 전체에서 관심사와 연결되는 기록을 찾는다. `course`·`paper`·`study`는 `topics`, `## 배운 점`, `## 남은 질문`을 먼저 본다. `archive`·`memo`와 함께 작업하면 이번에 작성하거나 보강한 항목의 최종 내용을 기준으로 삼는다. `public: false`인 항목과 공개 페이지에서 숨기는 `## 자소서 재료`는 추천의 모든 필드와 본문에서 제외한다.
-2. 관심 주제마다 `content/next/<slug>.md`를 한 개씩, 한 번에 최대 3개 작성한다. 기록에서 이미 익힌 내용을 `learned`에, 남은 질문을 풀기 위해 다음에 공부할 개념을 `next`에 넣는다. 탐구해 볼 새 질문은 `questions`에 제안한다. `resources.course`에는 `data/courses.json`의 `name` 또는 관련 연구실의 `courses`에 있는 과목명을 그대로 쓴다. 자료 주소를 확인한 경우에만 `resources.url`을 적는다.
+2. 관심 주제마다 `content/next/<slug>.md`를 한 개씩, 한 번에 최대 3개 작성한다.
+   - `learned`: 기록에서 이미 익힌 내용
+   - `next`: 남은 질문을 풀기 위해 다음에 공부할 개념(1개 이상)
+   - `actions`: 바로 해볼 공부·탐구를 지금 실행할 수 있는 구체적인 행동 단위로 순서대로 한 항목씩 적는다(예: `"DNA 복제 포크 구조 복습"`, `"복제 스트레스 개념 정리"`, `"읽은 논문 그림 하나 다시 설명해 보기"`). 막연한 목표 대신 바로 착수할 수 있는 행동으로 `learned → next → actions` 흐름이 이어지게 쓴다.
+   - `questions`: 이어서 탐구해 볼 새 연구 질문
+   - `resources`: `course`에는 `data/courses.json`의 `name` 또는 관련 연구실의 `courses`에 있는 과목명을 그대로 쓰고, `url`은 실제 주소를 확인한 경우에만 적는다.
 3. `data/labs.json`의 연구 주제와 공개 기록을 대조해 연구실을 우선 추천한다. `data/interns.json`의 직무 태그와 내 기록이 맞을 때는 인턴·기업도 포함한다. `content/matches/<slug>.md`는 한 번에 최대 5개 작성한다.
 
    | `kind` | `target` | 대조할 자료 |
