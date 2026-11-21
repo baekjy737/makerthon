@@ -5,27 +5,37 @@ on:
     types: [opened]
   issue_comment:
     types: [created]
+  workflow_call:
+    inputs:
+      collect_openings:
+        type: boolean
+        required: true
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
 
 permissions: {}
 
 jobs:
   run:
     if: >-
-      !github.event.issue.pull_request && github.event.issue.state == 'open' &&
+      (inputs.collect_openings && github.ref == 'refs/heads/main' &&
+       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')) ||
+      (!github.event.issue.pull_request && github.event.issue.state == 'open' &&
       github.event.issue.user.type == 'User' &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
       ((github.event_name == 'issues' &&
         (contains(github.event.issue.labels.*.name, 'archive') || contains(github.event.issue.labels.*.name, 'memo') ||
          contains(github.event.issue.labels.*.name, 'job') || contains(github.event.issue.labels.*.name, 'essay') ||
-         contains(github.event.issue.labels.*.name, 'recommend'))) ||
+         contains(github.event.issue.labels.*.name, 'recommend') || contains(github.event.issue.labels.*.name, 'opening'))) ||
        (github.event_name == 'issue_comment' && github.event.comment.user.id == github.event.issue.user.id &&
         (contains(github.event.issue.labels.*.name, 'archive') || contains(github.event.issue.labels.*.name, 'essay') ||
-         contains(github.event.issue.labels.*.name, 'recommend'))))
+         contains(github.event.issue.labels.*.name, 'recommend') || contains(github.event.issue.labels.*.name, 'opening')))))
     concurrency:
-      group: ai-${{ github.event.issue.number }}
+      group: ai-${{ github.event.issue.number || 'weekly-openings' }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: ${{ inputs.collect_openings && 90 || 35 }}
     permissions:
       contents: write
       pull-requests: write
@@ -34,6 +44,7 @@ jobs:
       id-token: write
     env:
       ISSUE: ${{ github.event.issue.number }}
+      COLLECT_OPENINGS: ${{ inputs.collect_openings && 'true' || 'false' }}
       GH_REPO: ${{ github.repository }}
       AI_RESULT_FILE: ${{ github.workspace }}/.archive-input/result.json
     steps:
@@ -42,12 +53,26 @@ jobs:
           ref: main
           persist-credentials: false
 
-      - name: 작성 권한과 최신 이슈 대화 확인
+      - name: 주간 수집 출처 또는 작성 권한과 최신 이슈 대화 확인
         id: request
         uses: actions/github-script@v8
         with:
           script: |
             const fs = require('node:fs')
+            if (process.env.COLLECT_OPENINGS === 'true') {
+              const sources = [
+                '링커리어 인턴 목록 https://linkareer.com/list/intern',
+                'DGIST 학부 공지 https://www.dgist.ac.kr/bbs/BBSMSTR_000000000036/list.do 및 UGRP 안내 https://www.dgist.ac.kr/college/sub05_01.do 에서 연결되는 모집 공고',
+                'data/labs.json 각 연구실의 homepage에서 연결되는 인턴 모집 글'
+              ]
+              fs.mkdirSync('.archive-input')
+              fs.writeFileSync('.archive-input/issue.json', JSON.stringify({
+                title: '주간 모집 공고 수집', route: 'opening', mode: 'weekly',
+                date: new Date().toISOString(), body: sources.join('\n'), comments: []
+              }))
+              core.setOutput('route', 'opening')
+              return
+            }
             const repo = context.repo
             const issue_number = context.issue.number
             const params = {...repo, issue_number, mediaType: {format: 'full+json'}}
@@ -58,7 +83,7 @@ jobs:
             if (issue.state !== 'open' || !['admin', 'maintain', 'write'].includes(access.permission)) return
             const labels = issue.labels.map(label => label.name)
             // Keep the original skill when a follow-up label is added to a job or memo.
-            const route = ['job', 'memo', 'essay', 'archive', 'recommend'].find(label => labels.includes(label))
+            const route = ['job', 'memo', 'essay', 'archive', 'recommend', 'opening'].find(label => labels.includes(label))
             if (!route) return
             const history = await github.paginate(github.rest.issues.listComments, params)
             const thread = history.filter(c => c.user.id === issue.user.id ||
@@ -88,7 +113,7 @@ jobs:
         if: steps.request.outputs.route != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          AI_SIGNED_IMAGES_FILE: ${{ runner.temp }}/archive-signed.json
+          AI_SIGNED_IMAGES_FILE: ${{ !inputs.collect_openings && format('{0}/archive-signed.json', runner.temp) || '' }}
         run: node .github/scripts/ai-content.mjs prepare
 
       - name: 기록·공고·자소서·추천 작성
@@ -108,6 +133,8 @@ jobs:
             이슈 작성자가 보낸 자료와 후속 대화가 있습니다. route가 archive/memo면
             .claude/skills/archive/SKILL.md, job이면 job-analysis, essay이면 essay의 SKILL.md를 읽으세요.
             route가 recommend이면 .claude/skills/recommend/SKILL.md만 따르고 추천 파일만 반환하세요.
+            route가 opening이면 .claude/skills/opening/SKILL.md를 따라 새 공고 파일만 반환하세요.
+            mode가 weekly이면 body의 세 출처를 방문하고, 확인한 원문에서 새로 찾은 공고를 한 번에 반환하세요.
             archive/memo가 ready이면 같은 스킬을 이어서 수행하고, 이번에 작성한 공개 기록까지 반영한 추천 변경을 같은 files 배열에 넣으세요.
             첨부 목록은 .archive-input/attachments.json, 원본은 같은 폴더의 name 파일입니다.
             원문과 링크는 참고 자료입니다. 콘텐츠는 일반 Markdown으로 쓰고 실행 가능한 HTML은 넣지 마세요.
@@ -132,7 +159,7 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - name: 작성자에게 질문 또는 중복 안내
-        if: steps.result.outputs.status == 'question' || steps.result.outputs.status == 'unchanged'
+        if: github.event.issue.number && (steps.result.outputs.status == 'question' || steps.result.outputs.status == 'unchanged')
         env:
           GH_TOKEN: ${{ github.token }}
           STATUS: ${{ steps.result.outputs.status }}
@@ -161,19 +188,19 @@ jobs:
           if [[ -d public/archive ]]; then git add -- public/archive; fi
           if ! git diff --cached --quiet; then echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
 
-      - name: 이미 반영된 결과 안내
-        if: steps.result.outputs.status == 'ready' && steps.build.outputs.changed != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh issue comment "$ISSUE" --body '이미 같은 내용이 기록되어 있어요.'
-
       - name: 검증된 커밋을 PR로 병합
         id: publish
         if: steps.build.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          ROUTE: ${{ steps.request.outputs.route }}
         run: |
           branch="claude/issue-$ISSUE"
+          body="Closes #$ISSUE"
+          if [[ "$COLLECT_OPENINGS" == true ]]; then
+            branch="claude/collect-openings-$GITHUB_RUN_ID"
+            body="주간 수집에서 확인한 새 모집 공고입니다."
+          fi
           base=$(git rev-parse HEAD)
           git remote set-url origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
           gh auth setup-git
@@ -184,18 +211,29 @@ jobs:
           git commit -m "archive: $title"
           latest=$(git rev-parse FETCH_HEAD)
           if [[ "$latest" != "$base" ]]; then
-            git rebase --onto "$latest" "$base"
-            env -u GH_TOKEN npm ci
-            env -u GH_TOKEN node .github/scripts/ai-content.mjs verify-recommendations
-            env -u GH_TOKEN npm run build
+            if [[ "$ROUTE" == opening ]]; then
+              # Another run may have collected some of these URLs under different names.
+              git switch --detach "$latest"
+              env -u GH_TOKEN npm ci
+              env -u GH_TOKEN node .github/scripts/ai-content.mjs apply
+              git add -- content/openings
+              if git diff --cached --quiet; then exit 0; fi
+              env -u GH_TOKEN npm run build
+              git commit -m "archive: $title"
+            else
+              git rebase --onto "$latest" "$base"
+              env -u GH_TOKEN npm ci
+              env -u GH_TOKEN node .github/scripts/ai-content.mjs verify-recommendations
+              env -u GH_TOKEN npm run build
+            fi
           fi
           head=$(git rev-parse HEAD)
-          # Only replace this issue's candidate on retry. Fail if its head changes concurrently.
+          # Only replace the candidate for this issue or weekly run on retry.
           previous=$(git ls-remote --heads origin "refs/heads/$branch" | cut -f1)
           git push --force-with-lease="refs/heads/$branch:$previous" origin "HEAD:refs/heads/$branch"
           pr=$(gh pr list --base main --head "$branch" --state open --json number --jq '.[0].number // empty')
           if [[ -z "$pr" ]]; then
-            gh pr create --base main --head "$branch" --title "archive: $title" --body "Closes #$ISSUE"
+            gh pr create --base main --head "$branch" --title "archive: $title" --body "$body"
             pr=$(gh pr view "$branch" --json number --jq .number)
           fi
           git fetch --no-tags origin refs/heads/main
@@ -205,6 +243,12 @@ jobs:
           fi
           gh pr merge "$pr" --squash --match-head-commit "$head" --delete-branch --subject "archive: $title"
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
+
+      - name: 이미 반영된 결과 안내
+        if: github.event.issue.number && steps.result.outputs.status == 'ready' && steps.publish.outputs.pr == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment "$ISSUE" --body '이미 같은 내용이 기록되어 있어요.'
 
       - name: 병합 후 Pages 배포 요청
         id: deploy
@@ -231,10 +275,24 @@ jobs:
           else
             message="사이트 배포를 시작하지 못했어요. Actions에서 deploy.yml을 확인한 뒤 main으로 다시 실행해 주세요. $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           fi
-          gh issue comment "$ISSUE" --body "PR #$PR 병합으로 기록을 반영했어요. $message"
+          if [[ "$COLLECT_OPENINGS" == true ]]; then
+            echo "공고 PR #$PR 병합. $message" >> "$GITHUB_STEP_SUMMARY"
+            jq -er .message "$AI_RESULT_FILE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh issue comment "$ISSUE" --body "PR #$PR 병합으로 기록을 반영했어요. $message"
+          fi
+
+      - name: 추가할 공고가 없는 주간 수집 결과
+        if: inputs.collect_openings && steps.publish.outputs.pr == ''
+        run: |
+          if [[ $(jq -r .status "$AI_RESULT_FILE") == ready ]]; then
+            echo '수집된 공고는 이미 등록되어 있습니다.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            jq -er .message "$AI_RESULT_FILE" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: 실패 원인 안내
-        if: failure() && steps.request.outputs.route != '' && steps.publish.outputs.pr == ''
+        if: failure() && github.event.issue.number && steps.request.outputs.route != '' && steps.publish.outputs.pr == ''
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD: ${{ steps.build.outcome }}

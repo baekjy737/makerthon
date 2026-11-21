@@ -4,12 +4,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { parse, stringify } from 'yaml';
 import { contentPath } from '../.github/scripts/ai-content.mjs';
+import { openingSchema } from '../src/lib/schema';
 
 describe('AI 콘텐츠 경로', () => {
   test.each([
     ['content/next/2026-11-topic.md', 'next'],
     ['content/matches/2026-11-lab.md', 'match'],
+    ['content/openings/2026-11-example.md', 'opening'],
     ['content/entries/2026-11-record.md', 'entry'],
     ['content/entries/older/record.md', 'entry'],
     ['content/applications/company/index.md', 'application'],
@@ -21,12 +24,14 @@ describe('AI 콘텐츠 경로', () => {
   test.each([
     'data/labs.json', 'content/next/../x.md', 'content/matches/a/b.md', 'profile.yml',
     '/content/next/topic.md', 'content/next/topic.mdx', 'content/applications/company/details.md',
+    'content/openings/nested/example.md', 'content/openings/example.mdx',
+    'content/openings/example.md', 'content/openings/2026-13-example.md',
   ])('%s는 콘텐츠 출력 경로로 허용하지 않는다', (path) => {
     expect(contentPath(path)).toBeNull();
   });
 });
 
-describe('추천 결과 반영', () => {
+describe('AI 콘텐츠 반영', () => {
   const cli = fileURLToPath(new URL('../.github/scripts/ai-content.mjs', import.meta.url));
   const entry = {
     path: 'content/entries/record.md',
@@ -54,9 +59,9 @@ describe('추천 결과 반영', () => {
     });
   }
 
-  function apply(route: string, files: { path: string; markdown: string }[]) {
-    write('.archive-input/issue.json', JSON.stringify({ route }));
-    write('.archive-input/result.json', JSON.stringify({ status: 'ready', message: '완료', files, attachments: [] }));
+  function apply(route: string, files: { path: string; markdown: string }[], mode?: 'weekly', attachments: unknown[] = []) {
+    write('.archive-input/issue.json', JSON.stringify({ route, mode }));
+    write('.archive-input/result.json', JSON.stringify({ status: 'ready', message: '완료', files, attachments }));
     return runCli('apply');
   }
 
@@ -206,5 +211,81 @@ describe('추천 결과 반영', () => {
     write('content/next/b.md', older);
     const run = apply('recommend', [next]);
     expect(run.status, run.stderr).toBe(0);
+  });
+
+  describe('공고 수집', () => {
+    const source = 'https://example.org/notices/research-intern';
+    function opening(slug: string, fields: Record<string, unknown> = {}) {
+      const yaml = stringify({
+        kind: 'lab-intern', org: '샘플 연구실', title: '겨울 연구 인턴 모집', url: source,
+        verified: true, deadline: '2026-12-15', lab: 'LAB-A', created: '2026-11-21', ...fields,
+      });
+      return { path: 'content/openings/' + slug + '.md', markdown: '---\n' + yaml + '---\n학부 연구 인턴을 모집합니다.\n' };
+    }
+
+    test('샘플 이슈의 원문 URL로 생성한 Markdown은 Task 15 스키마를 통과한다', () => {
+      const file = opening('2026-11-example');
+      const run = apply('opening', [file]);
+      expect(run.status, run.stderr).toBe(0);
+      const markdown = readFileSync(join(root, file.path), 'utf8');
+      const data = openingSchema.parse(parse(markdown.split('---\n')[1]));
+      expect(data).toMatchObject({ url: source, lab: 'LAB-A', deadline: new Date('2026-12-15'), verified: true });
+    });
+
+    test('주간 수집은 기존 공고·인턴·같은 배치의 중복을 건너뛰고 새 공고를 살린다', () => {
+      const old = opening('2026-11-old');
+      write(old.path, old.markdown);
+      const other = opening('2026-11-new', { url: 'https://example.org/post?id=2', verified: false, deadline: undefined });
+      const duplicates = [
+        opening('2026-11-copy', { url: source + '#apply' }),
+        opening('2026-11-intern', { url: 'https://example.org/intern' }),
+        opening('2026-11-new-copy', { url: 'https://EXAMPLE.ORG:443/post?id=2' }),
+      ];
+      const run = apply('opening', [duplicates[0], duplicates[1], other, duplicates[2]], 'weekly');
+      expect(run.status, run.stderr).toBe(0);
+      expect(readFileSync(join(root, other.path), 'utf8')).toBe(other.markdown);
+      expect(readFileSync(join(root, old.path), 'utf8')).toBe(old.markdown);
+      for (const file of duplicates) expect(existsSync(join(root, file.path))).toBe(false);
+      // Retrying the same batch also leaves already-created paths untouched.
+      expect(apply('opening', [other], 'weekly').status).toBe(0);
+    });
+
+    test('다른 원문의 공고로 기존 경로를 덮어쓰지 않는다', () => {
+      const existing = opening('2026-11-existing');
+      write(existing.path, existing.markdown);
+      const candidate = opening('2026-11-another', { url: source + '?notice=2' });
+      const collision = opening('2026-11-existing', { url: source + '?notice=3' });
+      const run = apply('opening', [candidate, collision], 'weekly');
+      expect(run.status).not.toBe(0);
+      expect(readFileSync(join(root, existing.path), 'utf8')).toBe(existing.markdown);
+      expect(existsSync(join(root, candidate.path))).toBe(false);
+    });
+
+    test('공고 전용 실행과 다른 이슈의 콘텐츠 범위를 분리한다', () => {
+      const file = opening('2026-11-example');
+      expect(apply('opening', [file, entry]).status).not.toBe(0);
+      expect(apply('opening', [file], undefined, [{ entry: 'record', name: 'attachment' }]).status).not.toBe(0);
+      expect(apply('archive', [file]).status).not.toBe(0);
+      expect(existsSync(join(root, file.path))).toBe(false);
+      expect(existsSync(join(root, entry.path))).toBe(false);
+    });
+
+    test.each([
+      { url: '/relative' }, { url: 'mailto:example@example.org' }, { lab: '없는 연구실' },
+      { deadline: undefined }, { deadline: '2026-02-30' }, { start: '2026-12-16' },
+    ])('원문 링크·실제 연구실·접수 기간을 확인한다 (%j)', fields => {
+      const file = opening('2026-11-example', fields);
+      const run = apply('opening', [file]);
+      expect(run.status).not.toBe(0);
+      expect(existsSync(join(root, file.path))).toBe(false);
+    });
+
+    test('새 공고 본문에도 공개 Markdown 검사를 적용한다', () => {
+      const file = opening('2026-11-example');
+      const run = apply('opening', [{ ...file, markdown: file.markdown + '<div>접수 안내</div>' }]);
+      expect(run.status).not.toBe(0);
+      expect(run.stderr).toContain('HTML');
+      expect(existsSync(join(root, file.path))).toBe(false);
+    });
   });
 });

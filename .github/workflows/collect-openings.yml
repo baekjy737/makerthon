@@ -1,0 +1,23 @@
+name: 주간 모집 공고 수집
+
+on:
+  schedule:
+    - cron: '0 0 * * 1' # 월요일 09:00 KST
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  collect:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ai.yml
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      issues: write
+      id-token: write
+    with:
+      collect_openings: true
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
