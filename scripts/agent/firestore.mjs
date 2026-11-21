@@ -4,8 +4,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { COLLECTIONS, docKey, docToMarkdown, docToPath, markdownToDoc, pathToDoc } from './content.mjs';
 
 function app() {
@@ -31,13 +31,38 @@ export async function ownerFromHeader(header) {
   return ownerFromToken(token);
 }
 
+// Firebase ID 토큰을 Google 공개 키로 직접 검증한다. firebase-admin/auth는 Vercel 런타임에서
+// ESM 전용 의존성(jose 6)을 require()하다 실패해서 쓰지 않는다.
+const firebaseKeys = createRemoteJWKSet(
+  new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'),
+);
+
+function projectId() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT?.trim();
+  if (raw) {
+    try {
+      return JSON.parse(raw).project_id;
+    } catch {
+      /* 아래 값 사용 */
+    }
+  }
+  return process.env.PUBLIC_FIREBASE_PROJECT_ID?.trim();
+}
+
 /** @param {string} token */
 export async function ownerFromToken(token) {
   const owner = process.env.OWNER_EMAIL?.trim().toLowerCase();
-  if (!owner) return null;
+  const project = projectId();
+  if (!owner || !project) return null;
   try {
-    const user = await getAuth(app()).verifyIdToken(token);
-    return user.email_verified && user.email?.toLowerCase() === owner ? user : null;
+    const { payload } = await jwtVerify(token, firebaseKeys, {
+      issuer: `https://securetoken.google.com/${project}`,
+      audience: project,
+      algorithms: ['RS256'],
+    });
+    if (typeof payload.sub !== 'string' || !payload.sub) return null;
+    const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : '';
+    return payload.email_verified === true && email === owner ? payload : null;
   } catch {
     return null;
   }
