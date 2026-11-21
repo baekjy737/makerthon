@@ -10,15 +10,17 @@ const entryPattern = new RegExp('^content/entries/' + slug + '(?:/' + slug + ')*
 const applicationPattern = new RegExp('^content/applications/' + slug + '/(?:index|essay-[1-9][0-9]*)\\.md$');
 const nextPattern = new RegExp('^content/next/' + slug + '\\.md$');
 const matchPattern = new RegExp('^content/matches/' + slug + '\\.md$');
+const openingPattern = new RegExp('^content/openings/[0-9]{4}-(?:0[1-9]|1[0-2])-' + slug + '\\.md$');
 const maxBytes = 25 * 1024 * 1024;
 
-/** @param {string} path @returns {'entry' | 'application' | 'next' | 'match' | null} */
+/** @param {string} path @returns {'entry' | 'application' | 'next' | 'match' | 'opening' | null} */
 export function contentPath(path) {
   if (typeof path !== 'string') return null;
   if (entryPattern.test(path)) return 'entry';
   if (applicationPattern.test(path)) return 'application';
   if (nextPattern.test(path)) return 'next';
   if (matchPattern.test(path)) return 'match';
+  if (openingPattern.test(path)) return 'opening';
   return null;
 }
 
@@ -163,6 +165,42 @@ function checkMarkdown(node) {
   for (const child of node.children ?? []) checkMarkdown(child);
 }
 
+function openingSourceKey(value) {
+  if (typeof value !== 'string' || !/^https?:\/\/[^/]/iu.test(value) || /[\s\\]/u.test(value) || !URL.canParse(value)) return null;
+  const url = new URL(value);
+  if (url.username || url.password) return null;
+  // An anchor points into the same posting. Query parameters may identify different postings.
+  url.hash = '';
+  return url.href;
+}
+
+function existingOpeningSources(parse) {
+  const sources = new Set(readJson('data/interns.json').map(intern => openingSourceKey(intern.url)).filter(Boolean));
+  const directory = 'content/openings';
+  if (existsSync(directory)) {
+    for (const file of readdirSync(directory, { withFileTypes: true })) {
+      if (!file.isFile() || !file.name.endsWith('.md')) continue;
+      const { data } = frontmatter(readFileSync(join(directory, file.name), 'utf8'), parse);
+      const url = openingSourceKey(data.url);
+      if (url) sources.add(url);
+    }
+  }
+  return sources;
+}
+
+function checkOpening(data, labs) {
+  for (const value of [data.start, data.deadline]) {
+    if (value === undefined) continue;
+    const time = Date.parse(value);
+    const valid = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(value)
+      && Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+    check(valid, '공고 접수일은 실제 YYYY-MM-DD 날짜여야 합니다.');
+  }
+  check(data.verified !== true || data.deadline !== undefined, '접수 마감일을 확인한 공고만 verified: true로 표시할 수 있습니다.');
+  check(!data.start || !data.deadline || data.start <= data.deadline, '접수 마감일이 시작일보다 빠릅니다.');
+  check(data.lab === undefined || labs.has(data.lab), '공고의 연구실 ID가 data/labs.json에 없습니다.');
+}
+
 function checkMatch(data, labs, interns) {
   let records;
   switch (data.kind) {
@@ -245,6 +283,7 @@ async function apply() {
   if (result.status !== 'ready') return;
   check(Array.isArray(result.files) && Array.isArray(result.attachments), '변경 파일 또는 첨부 목록이 없습니다.');
   const { route } = readJson(input + '/issue.json');
+  check(route !== 'opening' || result.attachments.length === 0, '공고 수집 요청에는 첨부 파일을 추가할 수 없습니다.');
   checkFile(manifestPath);
   const available = new Set(readJson(manifestPath).map(item => item.name).filter(Boolean));
   const { parse } = await import('yaml');
@@ -252,17 +291,30 @@ async function apply() {
   const { markdownToMdast } = await import('satteri');
   const changes = new Map();
   const entries = new Map();
+  let openingSources;
+  let labIds;
 
   for (const { path, markdown } of result.files) {
     check(typeof path === 'string' && typeof markdown === 'string' && markdown.trim(), '잘못된 Markdown 변경입니다.');
     const kind = contentPath(path);
     check(kind, '콘텐츠 범위 밖의 파일 경로입니다.');
+    check((route === 'opening') === (kind === 'opening'), '공고 수집 요청은 공고 파일만 생성할 수 있고 다른 요청은 공고를 수정할 수 없습니다.');
     const recommendation = kind === 'next' || kind === 'match';
     check(route !== 'recommend' || recommendation, '추천 요청은 추천 파일만 수정할 수 있습니다.');
     check(!recommendation || ['archive', 'memo', 'recommend'].includes(route), '이 요청은 추천 파일을 수정할 수 없습니다.');
     checkFile(path);
-    check(!changes.has(path), '중복된 변경 경로입니다.');
     const { data, body } = frontmatter(markdown, parse);
+    if (kind === 'opening') {
+      const url = openingSourceKey(data.url);
+      check(url, '공고 원문은 절대 HTTP(S) URL이어야 합니다.');
+      openingSources ??= existingOpeningSources(parse);
+      if (openingSources.has(url)) continue;
+      check(!existsSync(path), '이미 있는 공고 파일을 덮어쓸 수 없습니다.');
+      labIds ??= new Set(readJson('data/labs.json').map(lab => lab.id));
+      checkOpening(data, labIds);
+      openingSources.add(url);
+    }
+    check(!changes.has(path), '중복된 변경 경로입니다.');
     checkMarkdown(markdownToMdast(body));
     if (data.url !== undefined) checkUrl(data.url);
     for (const link of data.links ?? []) checkUrl(link.url);

@@ -75,9 +75,9 @@ claude setup-token
 - Name: `CLAUDE_CODE_OAUTH_TOKEN`
 - Secret: 복사한 토큰 값
 
-### 6. 이슈 라벨 5개 만들기
+### 6. 이슈 라벨 6개 만들기
 
-AI 자동화가 이슈 종류를 구분할 수 있도록 `archive`, `job`, `essay`, `memo`, `recommend` 라벨을 만듭니다. GitHub CLI(`gh`)가 설치되어 있다면 저장소 폴더에서 아래 5줄을 실행하면 됩니다.
+AI 자동화가 이슈 종류를 구분할 수 있도록 저장소 폴더에서 GitHub CLI(`gh`)로 아래 라벨을 만듭니다.
 
 ```bash
 gh label create archive --color 3b82f6 --description "활동 아카이빙 요청"
@@ -85,6 +85,7 @@ gh label create job     --color 10b981 --description "채용 공고 분석 요�
 gh label create essay   --color 8b5cf6 --description "자소서 초안 작성 요청"
 gh label create memo    --color f59e0b --description "기존 항목에 메모 반영"
 gh label create recommend --color ec4899 --description "다음 공부·진로 추천"
+gh label create opening --color 0e7490 --description "지원 페이지에 모집 공고 추가"
 ```
 
 ---
@@ -109,6 +110,7 @@ gh label create recommend --color ec4899 --description "다음 공부·진로 �
 |---|---|
 | `archive` | 메모·링크·첨부 파일로 활동 항목 Markdown 작성 |
 | `job` | 채용 공고 분석, 항목별 적합도, 맞춤 이력서(`/resume/<공고>`) 생성 |
+| `opening` | 공고 원문 URL에서 모집 기관·유형·접수 기간을 확인해 지원 페이지(`/apply`)에 공고 추가 |
 | `essay` | 자소서 문항에 맞는 경험 추천 → 부족한 내용 질문 → 글자 수 맞춘 초안 작성 |
 | `memo` | 상세 페이지 메모 패널에 적은 내용을 기존 항목 본문에 보강 |
 | `recommend` | 공개 기록의 배운 점·남은 질문으로 다음 공부(`/next`)와 연구실·인턴 추천(`/match`) 갱신 |

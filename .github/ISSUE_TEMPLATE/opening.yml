@@ -1,0 +1,31 @@
+name: 모집 공고 추가하기
+description: 연구실·학부 연구과제·기업의 모집 공고를 지원 페이지에 추가합니다.
+title: "[공고 추가] "
+labels: [opening]
+body:
+  - type: input
+    id: url
+    attributes:
+      label: 공고 URL
+      description: 모집 요강과 접수 기간이 나오는 개별 공고의 원문 주소를 적어 주세요.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 공고 유형
+      description: 유형을 아는 경우 선택해 주세요. 비워 두면 공고 원문에서 확인합니다.
+      options:
+        - 대학원 연구실 인턴
+        - 연구과제 학부연구생
+        - 기업 인턴
+        - 기업 채용
+    validations:
+      required: false
+  - type: textarea
+    id: memo
+    attributes:
+      label: 메모
+      description: 공고에서 함께 확인할 내용이 있으면 적어 주세요.
+    validations:
+      required: false
