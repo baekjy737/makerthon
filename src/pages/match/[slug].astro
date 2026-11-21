@@ -1,0 +1,601 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import PlanButton from '../../components/PlanButton.astro';
+import { findTarget, interns, labs } from '../../lib/data';
+import { issueUrl } from '../../lib/issue';
+import { loadProfile } from '../../lib/profile';
+import { recruitStatus, resolveFrom } from '../../lib/recommend';
+import { section } from '../../lib/study';
+import { TYPE_LABELS } from '../../lib/types';
+import { withBase } from '../../lib/url';
+
+// 공개 근거가 하나라도 있는 추천만 페이지를 만든다
+export async function getStaticPaths() {
+  const entries = await getCollection('entries');
+  const items = await getCollection('matches');
+  return items
+    .map((item) => ({ item, from: resolveFrom(item.data.from, entries) }))
+    .filter(({ from }) => from.length > 0)
+    .map(({ item, from }) => ({ params: { slug: item.id }, props: { item, from } }));
+}
+
+interface Props {
+  item: CollectionEntry<'matches'>;
+  from: CollectionEntry<'entries'>[];
+}
+
+const KIND_LABELS = { lab: '연구실', company: '기업', intern: '인턴' } as const;
+
+const { item, from } = Astro.props;
+const { data } = item;
+const { Content } = await render(item);
+const profile = loadProfile();
+
+// target이 데이터에서 사라져도 페이지는 그린다(원본 자리에 안내)
+const target = findTarget(data.kind, data.target);
+const title = target?.title ?? data.target;
+const lab = data.kind === 'lab' ? labs.find((l) => l.id === data.target) : undefined;
+const intern = data.kind === 'intern' ? interns.find((i) => i.id === data.target) : undefined;
+const companyPosts = data.kind === 'company' ? interns.filter((i) => i.company === data.target) : [];
+const builtStatus = intern ? recruitStatus({ start: intern.start, deadline: intern.deadline, url: intern.url }, new Date()) : undefined;
+
+const entryPath = (e: CollectionEntry<'entries'>) => e.filePath ?? `content/entries/${e.id}.md`;
+
+// [지원 자료 만들기]: .github/ISSUE_TEMPLATE/job.yml 항목 순서(공고 본문 또는 링크 → 지원 직무). 연구실 서술은 data/labs.json 값만.
+const applyUrl = lab
+  ? issueUrl(profile.repo, {
+      label: 'job',
+      title: `[연구실] ${title}`,
+      body: [
+        '### 공고 본문 또는 링크',
+        '',
+        `${lab.name} 교수 · ${lab.lab ?? lab.dept} (${lab.dept})`,
+        ...(lab.homepage ? [lab.homepage] : []),
+        '',
+        `연구 요약: ${lab.summary}`,
+        ...(lab.internTopics.length > 0 ? ['', '하계 인턴 주제:', ...lab.internTopics.map((t) => `- ${t}`)] : []),
+        '',
+        '이 연구실을 추천받은 근거가 된 내 기록:',
+        ...from.map((e) => `- ${entryPath(e)}`),
+        '',
+        `추천 이유: ${data.reason}`,
+        '',
+        '### 지원 직무',
+        '',
+        '(학부 연구생, 하계 연구 인턴 등 지원하려는 자리를 적어 주세요.)',
+      ].join('\n'),
+    })
+  : undefined;
+
+const ym = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+const bullets = (md: string) =>
+  md
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[-*]\s+/, '').trim())
+    .filter(Boolean);
+---
+
+<Base title={title} description={data.reason}>
+  <article class="detail container">
+    <a class="back" href={withBase('match/')}><span aria-hidden="true">←</span> 관심 분야와 맞는 기회</a>
+
+    <header class="d-head">
+      <div class="d-meta">
+        <span class="d-eyebrow">{KIND_LABELS[data.kind]}</span>
+        <span class="score" aria-label={`적합도 ${data.score}점`}>
+          적합도 <b>{data.score}</b>
+          <span class="score-bar" aria-hidden="true"><span style={`width:${data.score}%`}></span></span>
+        </span>
+      </div>
+      <h1>{title}</h1>
+      {
+        intern && (
+          <p class="recruit">
+            <span class="badge" data-recruit data-start={intern.start ?? ''} data-deadline={intern.deadline ?? ''} data-url={intern.url ?? ''} data-state={builtStatus}>
+              {builtStatus}
+            </span>
+            {(intern.start || intern.deadline) && (
+              <span class="recruit-date">
+                {intern.start ?? '?'} ~ {intern.deadline ?? '?'}
+              </span>
+            )}
+          </p>
+        )
+      }
+      <p class="d-reason">{data.reason}</p>
+      <div class="d-actions">
+        {
+          applyUrl && (
+            <a class="apply" href={applyUrl} target="_blank" rel="noopener">
+              지원 자료 만들기
+              <span class="visually-hidden">(GitHub 이슈 작성 화면이 새 탭으로 열려요)</span>
+            </a>
+          )
+        }
+        <PlanButton id={`match:${item.id}`} />
+      </div>
+      {applyUrl && <p class="apply-hint">연구실 정보와 근거 기록을 채운 공고 분석 이슈를 열어요. 제출하면 AI가 맞춤 이력서와 지원 자료를 만들어요.</p>}
+    </header>
+
+    <section class="d-body" aria-label="추천 설명">
+      <Content />
+    </section>
+
+    {
+      data.check.length > 0 && (
+        <section class="block">
+          <h2>지원 전 더 알아볼 점</h2>
+          <ul class="checks">
+            {data.check.map((c) => (
+              <li>{c}</li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {
+      lab && (
+        <section class="block">
+          <h2>연구실 정보</h2>
+          <dl class="facts">
+            <dt>학과</dt>
+            <dd>{lab.dept}</dd>
+            {lab.lab && (
+              <>
+                <dt>연구실</dt>
+                <dd>{lab.lab}</dd>
+              </>
+            )}
+            <dt>연구 요약</dt>
+            <dd>{lab.summary}</dd>
+            {lab.internTopics.length > 0 && (
+              <>
+                <dt>하계 인턴 주제</dt>
+                <dd>
+                  <ul>
+                    {lab.internTopics.map((t) => (
+                      <li>{t}</li>
+                    ))}
+                  </ul>
+                </dd>
+              </>
+            )}
+            {lab.courses.length > 0 && (
+              <>
+                <dt>추천 과목</dt>
+                <dd>{lab.courses.join(', ')}</dd>
+              </>
+            )}
+          </dl>
+        </section>
+      )
+    }
+
+    {
+      intern && (
+        <section class="block">
+          <h2>공고 정보</h2>
+          <dl class="facts">
+            <dt>회사</dt>
+            <dd>{intern.company}</dd>
+            <dt>분야</dt>
+            <dd>{intern.category}</dd>
+            {intern.tags.length > 0 && (
+              <>
+                <dt>직무</dt>
+                <dd>{intern.tags.join(', ')}</dd>
+              </>
+            )}
+            {intern.eligibility && (
+              <>
+                <dt>지원 자격</dt>
+                <dd>{intern.eligibility}</dd>
+              </>
+            )}
+            {!intern.verified && (
+              <>
+                <dt>확인</dt>
+                <dd>원본 공고와 아직 대조하지 않은 정보예요.</dd>
+              </>
+            )}
+          </dl>
+        </section>
+      )
+    }
+
+    {
+      companyPosts.length > 0 && (
+        <section class="block">
+          <h2>이 기업의 인턴 공고</h2>
+          <ul class="posts">
+            {companyPosts.map((p) => (
+              <li>
+                {p.url ? (
+                  <a href={p.url} target="_blank" rel="noopener">
+                    {p.title} <span aria-hidden="true">↗</span>
+                  </a>
+                ) : (
+                  <span>{p.title}</span>
+                )}
+                {p.deadline && <span class="post-date">마감 {p.deadline}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    <section class="block">
+      <h2>원본 자료</h2>
+      <ul class="sources">
+        {
+          target?.url ? (
+            <li>
+              <a href={target.url} target="_blank" rel="noopener">
+                {data.kind === 'lab' ? '연구실 홈페이지' : '공고 원문'} <span aria-hidden="true">↗</span>
+              </a>
+            </li>
+          ) : (
+            <li class="missing">원본 자료를 찾을 수 없어요</li>
+          )
+        }
+        {
+          data.sources.map((s) => (
+            <li>
+              <a href={s.url} target="_blank" rel="noopener">
+                {s.label} <span aria-hidden="true">↗</span>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <section class="evidence block" aria-labelledby="ev-title">
+      <h2 id="ev-title">출발한 기록 <span class="count">{from.length}</span></h2>
+      {
+        from.map((e) => {
+          const q = bullets(section(e.body ?? '', '남은 질문'));
+          return (
+            <details class="ev">
+              <summary>
+                <span class="ev-type">{TYPE_LABELS[e.data.type]}</span>
+                <span class="ev-title">{e.data.title}</span>
+                <span class="ev-date">{ym(e.data.date)}</span>
+              </summary>
+              <div class="ev-body">
+                <p>{e.data.summary}</p>
+                {q.length > 0 && (
+                  <>
+                    <p class="ev-k">남은 질문</p>
+                    <ul>
+                      {q.map((x) => (
+                        <li>{x}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                <a class="ev-link" href={withBase(`portfolio/${e.id}/`)}>
+                  기록 전체 보기 <span aria-hidden="true">→</span>
+                </a>
+              </div>
+            </details>
+          );
+        })
+      }
+    </section>
+  </article>
+</Base>
+
+<script>
+  import { recruitStatus } from '../../lib/recommend';
+
+  // 모집 상태는 빌드 날짜가 아니라 오늘 날짜로
+  document.querySelectorAll<HTMLElement>('[data-recruit]').forEach((el) => {
+    const { start, deadline, url } = el.dataset;
+    el.textContent = recruitStatus({ start: start || undefined, deadline: deadline || undefined, url: url || undefined }, new Date());
+    el.dataset.state = el.textContent;
+  });
+</script>
+
+<style>
+  .detail {
+    max-width: 52rem;
+    padding-block: clamp(2rem, 6vw, 4rem) 6rem;
+  }
+  .back {
+    display: inline-flex;
+    gap: 0.375rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+    transition: color 160ms ease-out;
+  }
+  .back:hover {
+    color: var(--fg);
+  }
+
+  .d-head {
+    margin: 1.75rem 0 2.5rem;
+  }
+  .d-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .d-eyebrow {
+    font-family: var(--font-ko-bold);
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+  }
+  .score {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .score b {
+    font-family: var(--font-mono);
+    color: var(--fg);
+  }
+  .score-bar {
+    position: relative;
+    width: 4rem;
+    height: 4px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--fg) 12%, transparent);
+    overflow: hidden;
+  }
+  .score-bar > span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--accent);
+  }
+  h1 {
+    font-size: clamp(1.75rem, 4.5vw, 2.75rem);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+  .recruit {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin-top: 0.75rem;
+  }
+  .badge {
+    padding: 0.1875rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--muted) 50%, transparent);
+    color: var(--muted);
+  }
+  .badge[data-state='모집 중'] {
+    border-color: #22c55e;
+    color: #4ade80;
+  }
+  .badge[data-state='모집 예정'] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .recruit-date {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .d-reason {
+    margin-top: 1.25rem;
+    font-size: 1.0625rem;
+    line-height: 1.75;
+    color: color-mix(in srgb, var(--fg) 90%, var(--muted));
+  }
+  .d-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem;
+    margin-top: 1.5rem;
+  }
+  .apply {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0 1.25rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-family: var(--font-ko-bold);
+    transition: transform 100ms ease-out;
+  }
+  .apply:active {
+    transform: scale(0.97);
+  }
+  .apply-hint {
+    margin-top: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  .d-body {
+    margin: 0 0 3rem;
+    padding: 1.5rem 1.75rem;
+    border-radius: 1.25rem;
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
+    color: color-mix(in srgb, var(--fg) 88%, var(--muted));
+    line-height: 1.8;
+  }
+  .d-body :global(p + p) {
+    margin-top: 0.75rem;
+  }
+  .d-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+
+  .block {
+    margin-bottom: 2.75rem;
+  }
+  .block h2 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .checks {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .checks li {
+    position: relative;
+    padding-left: 1.75rem;
+    line-height: 1.7;
+  }
+  .checks li + li {
+    margin-top: 0.5rem;
+  }
+  .checks li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.3em;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 4px;
+    border: 1.5px solid color-mix(in srgb, var(--fg) 35%, transparent);
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: 7rem 1fr;
+    gap: 0.75rem 1.25rem;
+    margin: 0;
+  }
+  .facts dt {
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .facts dd {
+    margin: 0;
+    line-height: 1.7;
+  }
+  .facts ul {
+    margin: 0;
+    padding-left: 1.125rem;
+  }
+
+  .posts,
+  .sources {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .posts li,
+  .sources li {
+    padding: 0.625rem 0;
+    border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .posts a,
+  .sources a {
+    color: var(--accent);
+  }
+  .post-date {
+    margin-left: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .missing {
+    color: var(--muted);
+  }
+
+  .count {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    color: var(--muted);
+    margin-left: 0.25rem;
+  }
+  .ev {
+    border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  .ev:last-child {
+    border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  .ev summary {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 1rem 0;
+    cursor: pointer;
+    list-style: none;
+  }
+  .ev summary::-webkit-details-marker {
+    display: none;
+  }
+  .ev summary::after {
+    content: '+';
+    margin-left: auto;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    transition: transform 200ms var(--ease-out, ease-out);
+  }
+  .ev[open] summary::after {
+    transform: rotate(45deg);
+  }
+  .ev-type {
+    flex: none;
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+  .ev-title {
+    min-width: 0;
+  }
+  .ev-date {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .ev-body {
+    padding: 0 0 1.25rem;
+    color: color-mix(in srgb, var(--fg) 86%, var(--muted));
+    font-size: 0.9375rem;
+  }
+  .ev-k {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .ev-body ul {
+    margin: 0.25rem 0 0;
+    padding-left: 1.125rem;
+  }
+  .ev-link {
+    display: inline-block;
+    margin-top: 0.875rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .ev-link:hover {
+    color: var(--fg);
+  }
+
+  @media (max-width: 560px) {
+    .facts {
+      grid-template-columns: 1fr;
+      gap: 0.25rem;
+    }
+    .facts dd {
+      margin-bottom: 0.75rem;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .apply:active {
+      transform: none;
+    }
+    .ev summary::after {
+      transition: none;
+    }
+  }
+</style>
