@@ -1,7 +1,10 @@
 ---
-import { getCollection, render } from 'astro:content';
+import { getCollection } from 'astro:content';
 import type { CollectionEntry } from 'astro:content';
 import Base from '../../layouts/Base.astro';
+import EssayWorkspace, { type WorkspaceQuestion } from '../../components/EssayWorkspace.astro';
+import { essayNumber } from '../../lib/essay';
+import { loadProfile } from '../../lib/profile';
 import { withBase } from '../../lib/url';
 
 export async function getStaticPaths() {
@@ -29,11 +32,23 @@ const essays = await getCollection('essays', (essay) => (
   essay.data.entries.every((entryId) => entriesById.get(entryId)?.data.public === true)
 ));
 essays.sort((a, b) => a.id.localeCompare(b.id, 'ko', { numeric: true }));
-const drafts = await Promise.all(essays.map(async (essay) => {
-  const { Content } = await render(essay);
-  const length = [...(essay.body ?? '').trim().replace(/\r\n/g, '\n')].length;
-  return { Content, length, ...essay.data };
-}));
+// 문항별 작성 화면 데이터. 소재는 공개 항목만 쓴다(비공개 항목은 제목·초안 모두 내보내지 않는다).
+// 소재가 없는 문항은 본문을 초안으로 쓴다.
+const profile = loadProfile();
+const questions: WorkspaceQuestion[] = essays.map((essay) => {
+  const materials = essay.data.materials.flatMap((m) => {
+    const entry = entriesById.get(m.entry);
+    if (!entry?.data.public) return [];
+    return [{ entry: entry.id, title: entry.data.title, reason: m.reason, href: withBase(`portfolio/${entry.id}/`), draft: m.draft }];
+  });
+  return {
+    n: essayNumber(essay.id),
+    question: essay.data.question,
+    limit: essay.data.limit,
+    checks: essay.data.checks,
+    materials: materials.length > 0 ? materials : [{ entry: '_body', title: '초안', draft: (essay.body ?? '').trim() }],
+  };
+});
 const deadline = data.deadline?.toISOString().slice(0, 10);
 const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
 ---
@@ -88,14 +103,11 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
     </section>
 
     <section class="draft-section" aria-labelledby="drafts">
-      <h2 id="drafts">자소서 초안</h2>
-      {drafts.length ? drafts.map(({ Content, question, length, limit }) => (
-        <article class="draft">
-          <h3>{question}</h3>
-          <p class="draft-count">원문 {length}자{limit != null && ` / 제한 ${limit}자`}</p>
-          <div class="draft-body"><Content /></div>
-        </article>
-      )) : <p class="empty">표시할 자소서 초안이 없습니다.</p>}
+      <h2 id="drafts">지원서 작성</h2>
+      <p class="draft-lead">문항마다 추천 소재를 고르면 그 소재로 쓴 초안이 편집 칸에 떠요. 고친 내용은 이 브라우저에 소재별로 저장돼요.</p>
+      {questions.length
+        ? <EssayWorkspace app={id} company={data.company} position={data.position} repo={profile.repo} questions={questions} />
+        : <p class="empty">표시할 자소서 문항이 없습니다. 지원서를 올리면 AI가 문항과 초안을 정리해요.</p>}
     </section>
   </article>
 </Base>
@@ -116,8 +128,7 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
   .back,
   .company,
   .deadline,
-  .empty,
-  .draft-count {
+  .empty {
     color: var(--secondary);
   }
 
@@ -238,8 +249,7 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
     list-style: none;
   }
 
-  .match-list li,
-  .draft {
+  .match-list li {
     border-top: 1px solid var(--rule);
     padding-block: 1rem;
   }
@@ -281,19 +291,10 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
     background: var(--accent);
   }
 
-  .draft-count {
-    margin-top: 0.35rem;
-    font-size: 0.9rem;
-  }
-
-  .draft-body {
-    margin-top: 0.75rem;
+  .draft-lead {
+    margin: -0.25rem 0 1.5rem;
     max-width: 60ch;
-    line-height: 1.7;
-  }
-
-  .draft-body :global(p + p) {
-    margin-top: 0.75rem;
+    color: var(--secondary);
   }
 
   @media (max-width: 38rem) {

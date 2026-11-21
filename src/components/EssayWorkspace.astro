@@ -1,0 +1,558 @@
+---
+// 지원서 작성: 문항마다 추천 소재(라디오) → 추천 이유·원본 링크 → 편집 가능한 초안(글자 수) → 확인할 항목 → [다듬기 요청].
+// 편집본은 소재별로 localStorage `essay:<app>/<n>:<entry>`에, 마지막으로 고른 소재는 `essay:<app>/<n>`에 둔다.
+// 저장할 수 없는 브라우저에서도 화면은 그대로 쓰고, 안내만 띄운다.
+
+export interface WorkspaceMaterial {
+  /** 공개 항목 id. 소재가 없는 문항은 '_body'(본문 초안) */
+  entry: string;
+  title: string;
+  reason?: string;
+  /** 원본 기록 링크(공개 항목만) */
+  href?: string;
+  draft: string;
+}
+
+export interface WorkspaceQuestion {
+  /** 문항 번호(essay-<n>) */
+  n: string;
+  question: string;
+  limit?: number;
+  materials: WorkspaceMaterial[];
+  checks: string[];
+}
+
+interface Props {
+  app: string;
+  company: string;
+  position: string;
+  /** owner/name */
+  repo: string;
+  questions: WorkspaceQuestion[];
+}
+
+const { app, company, position, repo, questions } = Astro.props;
+// <script type="application/json"> 안에서 </script>가 닫히지 않도록 < 를 이스케이프
+const json = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
+---
+
+<div class="ews" data-ews data-app={app} data-company={company} data-position={position} data-repo={repo}>
+  <p class="ews-warn" data-ews-warn hidden>
+    이 브라우저에는 저장할 수 없어요. 새로고침하면 고친 내용이 사라지니, 다듬기 요청을 보내거나 내용을 복사해 두세요.
+  </p>
+
+  {
+    questions.map((q) => (
+      <section class="q" data-q={q.n} aria-labelledby={`q-${q.n}`}>
+        <script type="application/json" data-q-data set:html={json(q)} />
+
+        <header class="q-head">
+          <p class="q-n">문항 {q.n}</p>
+          <h3 id={`q-${q.n}`}>{q.question}</h3>
+          {q.limit != null && <p class="q-limit">공백 포함 {q.limit}자 이내</p>}
+        </header>
+
+        {q.materials.length > 1 || q.materials[0]?.entry !== '_body' ? (
+          <fieldset class="mats">
+            <legend>추천 소재</legend>
+            <div class="mat-grid">
+              {q.materials.map((m, i) => (
+                <label class="mat">
+                  <input type="radio" name={`mat-${q.n}`} value={m.entry} checked={i === 0} />
+                  <span class="mat-card">
+                    <span class="mat-top">
+                      <span class="mat-dot" aria-hidden="true" />
+                      <span class="mat-title">{m.title}</span>
+                      {i === 0 && <span class="mat-tag">가장 추천</span>}
+                      <span class="mat-edited" data-edited hidden>
+                        고친 내용 있음
+                      </span>
+                    </span>
+                    {m.reason && <span class="mat-reason">{m.reason}</span>}
+                    {m.href && (
+                      <a class="mat-link" href={m.href} target="_blank" rel="noopener">
+                        원본 기록 보기 <span aria-hidden="true">↗</span>
+                      </a>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ) : null}
+
+        <div class="draft">
+          <div class="draft-head">
+            <label class="draft-label" for={`draft-${q.n}`} data-draft-label>
+              초안
+            </label>
+            <button type="button" class="ghost" data-reset hidden>
+              추천 초안으로 되돌리기
+            </button>
+          </div>
+          <textarea id={`draft-${q.n}`} class="draft-text" data-draft rows="12" aria-describedby={`count-${q.n} status-${q.n}`}>{q.materials[0]?.draft ?? ''}</textarea>
+          <div class="draft-foot">
+            <p class="count" id={`count-${q.n}`} data-count aria-live="polite" />
+            <p class="status" id={`status-${q.n}`} data-status aria-live="polite" />
+          </div>
+        </div>
+
+        {q.checks.length > 0 && (
+          <div class="checks">
+            <p class="checks-title">확인할 항목</p>
+            <p class="checks-hint">기록에 없어서 초안에 넣지 않은 내용이에요. 사실이면 직접 채우거나 다듬기 요청에 적어 주세요.</p>
+            <ul>
+              {q.checks.map((c) => (
+                <li>{c}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div class="q-actions">
+          <button type="button" class="refine" data-refine>
+            다듬기 요청
+          </button>
+          <span class="refine-hint">문항·선택한 소재·편집본을 담은 자소서 이슈를 새 탭으로 열어요.</span>
+        </div>
+      </section>
+    ))
+  }
+</div>
+
+<script>
+  import { charCount, draftKey, draftStore, refineBody, selectedKey } from '../lib/essay';
+  import { TRUNCATED_NOTE, issueUrl } from '../lib/issue';
+  import type { WorkspaceQuestion } from './EssayWorkspace.astro';
+
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  const store = draftStore(storage);
+
+  document.querySelectorAll<HTMLElement>('[data-ews]').forEach((root) => {
+    const { app, company, position, repo } = root.dataset as Record<string, string>;
+    root.querySelector<HTMLElement>('[data-ews-warn]')!.hidden = store.ok;
+
+    root.querySelectorAll<HTMLElement>('[data-q]').forEach((sec) => {
+      const q: WorkspaceQuestion = JSON.parse(sec.querySelector('[data-q-data]')!.textContent || '{}');
+      const text = sec.querySelector<HTMLTextAreaElement>('[data-draft]')!;
+      const label = sec.querySelector<HTMLElement>('[data-draft-label]')!;
+      const count = sec.querySelector<HTMLElement>('[data-count]')!;
+      const status = sec.querySelector<HTMLElement>('[data-status]')!;
+      const reset = sec.querySelector<HTMLButtonElement>('[data-reset]')!;
+      const radios = [...sec.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+      let timer: number | undefined;
+
+      const byEntry = new Map(q.materials.map((m) => [m.entry, m]));
+      const saved = store.get(selectedKey(app, q.n));
+      let current = (saved && byEntry.get(saved)) || q.materials[0];
+      if (!current) return;
+
+      const keyOf = (entry: string) => draftKey(app, q.n, entry);
+      const edited = (entry: string) => {
+        const v = store.get(keyOf(entry));
+        return v !== null && v !== byEntry.get(entry)!.draft;
+      };
+
+      function paintCount() {
+        const n = charCount(text.value);
+        if (q.limit == null) {
+          count.textContent = `${n}자`;
+          count.classList.remove('over');
+          return;
+        }
+        const over = n - q.limit;
+        count.textContent = over > 0 ? `${n} / ${q.limit}자 · 제한보다 ${over}자 많아요` : `${n} / ${q.limit}자`;
+        count.classList.toggle('over', over > 0);
+      }
+
+      function paintEdited() {
+        radios.forEach((r) => {
+          const tag = r.closest('.mat')?.querySelector<HTMLElement>('[data-edited]');
+          if (tag) tag.hidden = !edited(r.value) && !(r.value === current.entry && text.value !== current.draft);
+        });
+        reset.hidden = text.value === current.draft;
+      }
+
+      function show(m: typeof current) {
+        current = m;
+        const v = store.get(keyOf(m.entry));
+        text.value = v ?? m.draft;
+        label.textContent = m.entry === '_body' ? '초안' : `초안 · ${m.title}`;
+        radios.forEach((r) => (r.checked = r.value === m.entry));
+        status.textContent = '';
+        paintCount();
+        paintEdited();
+      }
+
+      /** 지금 편집본 저장. 추천 초안과 같으면 지운다(되돌린 상태) */
+      function save() {
+        window.clearTimeout(timer);
+        timer = undefined;
+        if (!store.ok) return;
+        const key = keyOf(current.entry);
+        if (text.value === current.draft) {
+          store.remove(key);
+          status.textContent = '';
+          return;
+        }
+        status.textContent = store.set(key, text.value)
+          ? '이 브라우저에 저장됐어요'
+          : '저장하지 못했어요. 저장 공간이 부족할 수 있어요. 내용을 복사해 두세요.';
+        status.classList.toggle('bad', status.textContent.startsWith('저장하지'));
+      }
+
+      radios.forEach((r) =>
+        r.addEventListener('change', () => {
+          const next = byEntry.get(r.value);
+          if (!next || next === current) return;
+          // 저장할 수 없는 브라우저에서는 소재를 바꾸면 고친 내용이 사라지므로 먼저 묻는다
+          if (!store.ok && text.value !== current.draft && !window.confirm('고친 내용은 이 브라우저에 저장되지 않아요. 다른 소재로 바꾸면 사라져요. 바꿀까요?')) {
+            radios.forEach((x) => (x.checked = x.value === current.entry));
+            return;
+          }
+          save();
+          show(next);
+          store.set(selectedKey(app, q.n), next.entry);
+        }),
+      );
+
+      text.addEventListener('input', () => {
+        paintCount();
+        paintEdited();
+        status.textContent = '';
+        window.clearTimeout(timer);
+        timer = window.setTimeout(save, 300);
+      });
+
+      reset.addEventListener('click', () => {
+        if (!window.confirm('고친 내용을 지우고 추천 초안으로 되돌릴까요?')) return;
+        text.value = current.draft;
+        save();
+        paintCount();
+        paintEdited();
+        text.focus();
+      });
+
+      sec.querySelector<HTMLButtonElement>('[data-refine]')!.addEventListener('click', () => {
+        save();
+        const entry = current.entry === '_body' ? undefined : { id: current.entry, title: current.title };
+        const body = refineBody({ app, n: q.n, company, position, question: q.question, limit: q.limit, entry, draft: text.value, checks: q.checks });
+        const url = issueUrl(repo, { label: 'essay', title: `[자소서] ${company} · 문항 ${q.n}`, body });
+        window.open(url, '_blank', 'noopener');
+        status.classList.remove('bad');
+        const cut = url.endsWith(encodeURIComponent(TRUNCATED_NOTE)) && !body.endsWith(TRUNCATED_NOTE);
+        status.textContent = cut ?'편집본이 길어서 앞부분만 담았어요. 열린 이슈에 나머지를 붙여 넣어 주세요.' : 'GitHub에서 이슈를 제출하면 AI가 다듬어요.';
+      });
+
+      window.addEventListener('pagehide', save);
+      show(current);
+    });
+  });
+</script>
+
+<style>
+  .ews {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(2.5rem, 6vw, 4rem);
+  }
+  .ews-warn {
+    padding: 0.875rem 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, #d97706 55%, transparent);
+    background: color-mix(in srgb, #f59e0b 12%, var(--bg));
+    font-size: 0.9375rem;
+  }
+  .ews-warn[hidden] {
+    display: none;
+  }
+
+  .q {
+    padding-top: 1.75rem;
+    border-top: 1px solid color-mix(in srgb, var(--fg) 14%, var(--bg));
+  }
+  .q-n {
+    font-family: var(--font-ko-bold);
+    font-size: 0.8125rem;
+    color: var(--accent);
+  }
+  .q-head h3 {
+    margin-top: 0.375rem;
+    font-size: clamp(1.125rem, 2.2vw, 1.375rem);
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+    max-width: 44rem;
+  }
+  .q-limit {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+
+  /* 추천 소재 */
+  .mats {
+    margin: 1.5rem 0 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .mats legend {
+    padding: 0;
+    margin-bottom: 0.75rem;
+    font-family: var(--font-ko-bold);
+    font-size: 0.9375rem;
+  }
+  .mat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: 0.75rem;
+  }
+  .mat {
+    position: relative;
+    display: block;
+    cursor: pointer;
+  }
+  .mat input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .mat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: 100%;
+    padding: 1rem 1.125rem;
+    border-radius: 0.875rem;
+    border: 1px solid color-mix(in srgb, var(--fg) 16%, var(--bg));
+    background: color-mix(in srgb, var(--fg) 3%, var(--bg));
+    transition:
+      border-color 160ms ease-out,
+      background-color 160ms ease-out,
+      transform 100ms ease-out;
+  }
+  .mat:hover .mat-card {
+    border-color: color-mix(in srgb, var(--fg) 34%, var(--bg));
+  }
+  .mat:active .mat-card {
+    transform: scale(0.99);
+  }
+  .mat input:checked + .mat-card {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .mat input:focus-visible + .mat-card {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  .mat-top {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .mat-dot {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    border: 1.5px solid color-mix(in srgb, var(--fg) 40%, var(--bg));
+    transition:
+      border-color 160ms ease-out,
+      border-width 160ms ease-out;
+  }
+  .mat input:checked + .mat-card .mat-dot {
+    border: 5px solid var(--accent);
+  }
+  .mat-title {
+    font-family: var(--font-ko-bold);
+    line-height: 1.4;
+  }
+  .mat-tag,
+  .mat-edited {
+    padding: 0.0625rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    white-space: nowrap;
+  }
+  .mat-tag {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+    color: var(--accent);
+  }
+  .mat-edited {
+    border: 1px solid color-mix(in srgb, var(--fg) 24%, var(--bg));
+    color: var(--muted);
+  }
+  .mat-edited[hidden] {
+    display: none;
+  }
+  .mat-reason {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .mat-link {
+    margin-top: auto;
+    align-self: flex-start;
+    font-size: 0.8125rem;
+    color: var(--accent);
+    text-underline-offset: 0.2em;
+  }
+  .mat-link:hover {
+    text-decoration: underline;
+  }
+
+  /* 초안 */
+  .draft {
+    margin-top: 1.5rem;
+  }
+  .draft-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+  .draft-label {
+    font-family: var(--font-ko-bold);
+    font-size: 0.9375rem;
+  }
+  .ghost {
+    min-height: 2.25rem;
+    padding: 0 0.875rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--fg) 18%, var(--bg));
+    background: transparent;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    cursor: pointer;
+    transition:
+      color 160ms ease-out,
+      border-color 160ms ease-out;
+  }
+  .ghost:hover {
+    color: var(--fg);
+    border-color: color-mix(in srgb, var(--fg) 40%, var(--bg));
+  }
+  .ghost[hidden] {
+    display: none;
+  }
+  .draft-text {
+    display: block;
+    width: 100%;
+    min-height: 14rem;
+    padding: 1rem 1.125rem;
+    border-radius: 0.875rem;
+    border: 1px solid color-mix(in srgb, var(--fg) 18%, var(--bg));
+    background: var(--bg);
+    line-height: 1.8;
+    resize: vertical;
+    transition: border-color 160ms ease-out;
+  }
+  .draft-text:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .draft-foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.25rem 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+  }
+  .count {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .count.over {
+    color: #dc2626;
+    font-family: var(--font-ko-bold);
+  }
+  .status {
+    color: var(--muted);
+  }
+  .status.bad {
+    color: #dc2626;
+  }
+
+  /* 확인할 항목 */
+  .checks {
+    margin-top: 1.5rem;
+    padding: 1rem 1.125rem;
+    border-radius: 0.875rem;
+    background: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  }
+  .checks-title {
+    font-family: var(--font-ko-bold);
+    font-size: 0.9375rem;
+  }
+  .checks-hint {
+    margin-top: 0.25rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .checks ul {
+    margin: 0.75rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .checks li {
+    position: relative;
+    padding-left: 1.5rem;
+    line-height: 1.6;
+  }
+  .checks li + li {
+    margin-top: 0.375rem;
+  }
+  .checks li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.3em;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 3px;
+    border: 1.5px solid color-mix(in srgb, var(--fg) 35%, var(--bg));
+  }
+
+  .q-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-top: 1.5rem;
+  }
+  .refine {
+    min-height: 2.75rem;
+    padding: 0 1.25rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-family: var(--font-ko-bold);
+    cursor: pointer;
+    transition: transform 100ms ease-out;
+  }
+  .refine:active {
+    transform: scale(0.97);
+  }
+  .refine-hint {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mat:active .mat-card,
+    .refine:active {
+      transform: none;
+    }
+  }
+</style>
