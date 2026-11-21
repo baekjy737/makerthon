@@ -4,6 +4,7 @@ import {
   GitHubError,
   MAX_UPLOAD_BYTES,
   createClient,
+  createLocalClient,
   githubError,
   issueStatus,
   newNonce,
@@ -83,6 +84,13 @@ describe('issueStatus', () => {
   test('의미 없는 봇 댓글(배포 안내 등)은 건너뛴다', () => {
     const c = [bot('PR #3 병합으로 기록을 반영했어요.', '2026-11-21T00:03:00Z'), bot('다른 봇 알림', '2026-11-21T00:04:00Z')];
     expect(issueStatus(c, since, at(5)).status).toBe('done');
+  });
+
+  test('로컬 실행기 표시: 반영·실패·중복', () => {
+    expect(issueStatus([bot('기록했어요.\n<!-- archive-done -->', '2026-11-21T00:03:00Z')], since, at(4)).status).toBe('done');
+    // 반영 실패 문구에 "병합" 같은 말이 섞여도 실패 표시가 우선
+    expect(issueStatus([bot('검증 실패\n<!-- archive-failed -->', '2026-11-21T00:03:00Z')], since, at(4)).status).toBe('failed');
+    expect(issueStatus([bot('이미 있어요.\n<!-- archive-unchanged -->', '2026-11-21T00:03:00Z')], since, at(4)).status).toBe('done');
   });
 
   test('완료 뒤 다시 답하면(재실행) working', () => {
@@ -188,5 +196,33 @@ describe('createClient', () => {
       { author: 'github-actions[bot]', bot: true, body: 'x', createdAt: '2026-11-21T00:01:00Z' },
       { author: 'me', bot: false, body: 'y', createdAt: '2026-11-21T00:02:00Z' },
     ]);
+  });
+});
+
+describe('createLocalClient', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const base = 'http://127.0.0.1:4330';
+
+  test('요청 만들기·댓글 읽기·답하기를 로컬 실행기로 보낸다', async () => {
+    const calls: { url: string; method: string; body?: unknown }[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+      calls.push({ url, method: init.method ?? 'GET', body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined });
+      const data = url.endsWith('/requests') ? { number: 3, createdAt: '2026-11-21T00:00:00Z' } : url.endsWith('/comments') && init.method !== 'POST' ? [] : { ok: true };
+      return new Response(JSON.stringify(data), { status: 200 });
+    });
+    const c = createLocalClient(base);
+    const issue = await c.createIssue({ label: 'archive', title: 't', body: 'b' });
+    expect(issue).toEqual({ number: 3, url: `${base}/requests/3/comments`, createdAt: '2026-11-21T00:00:00Z' });
+    expect(await c.comments(3)).toEqual([]);
+    await c.reply(3, '답');
+    expect(calls.map((x) => `${x.method} ${x.url}`)).toEqual([`POST ${base}/requests`, `GET ${base}/requests/3/comments`, `POST ${base}/requests/3/comments`]);
+    expect(calls[0].body).toEqual({ label: 'archive', title: 't', body: 'b' });
+  });
+
+  test('실행기가 꺼져 있으면 안내 오류', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('fetch failed');
+    });
+    await expect(createLocalClient(base).comments(1)).rejects.toThrow('npm run agent:local');
   });
 });

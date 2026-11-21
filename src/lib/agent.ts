@@ -81,6 +81,9 @@ type Meaning = AgentStatus | null;
 /** 봇 댓글의 의미. 표에 없는 봇 댓글(배포 안내 등)은 null */
 function botMeaning(body: string): Meaning {
   if (body.includes('<!-- archive-question -->')) return 'question';
+  // 로컬 실행기(scripts/local-agent.mjs)의 표시
+  if (body.includes('<!-- archive-failed -->')) return 'failed';
+  if (body.includes('<!-- archive-done -->')) return 'done';
   if (body.includes('자동 처리에 실패') || body.includes('반영하지 않았어요')) return 'failed';
   if (/PR #\d+/.test(body) && body.includes('병합')) return 'done';
   if (body.includes('이미 같은 내용이 기록되어 있어요') || body.includes('<!-- archive-unchanged -->')) return 'done';
@@ -210,6 +213,73 @@ export function createClient(repo: string, token: string) {
 }
 
 export type AgentClient = ReturnType<typeof createClient>;
+
+/** 개발 모드에서 찾는 로컬 AI 실행기(scripts/local-agent.mjs) 기본 주소 */
+export const LOCAL_AGENT_URL = 'http://127.0.0.1:4330';
+/** localStorage: 로컬 실행기로 보낸 최근 요청(GitHub 이슈 번호와 섞이지 않게 따로 둔다) */
+export const LOCAL_RECENT_KEY = 'agent-recent-local';
+
+/** 로컬 실행기가 켜져 있으면 true. 1초 안에 답이 없으면 false */
+export async function localAgentAlive(base: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1000) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 데모용: GitHub 대신 이 컴퓨터의 로컬 실행기와 이야기하는 클라이언트. createClient와 같은 모양이다.
+ * 로컬 실행기는 이 컴퓨터의 Claude Code로 처리하고 content/에 바로 반영한다.
+ */
+export function createLocalClient(base: string): AgentClient {
+  async function call<T>(path: string, init: { method?: string; body?: BodyInit; json?: unknown } = {}): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(`${base}${path}`, {
+        method: init.method ?? 'GET',
+        headers: init.json !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+        body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
+      });
+    } catch {
+      throw new GitHubError('로컬 AI 실행기에 연결하지 못했어요. 터미널에서 npm run agent:local이 켜져 있는지 확인해 주세요.', 0);
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new GitHubError(data?.error ?? `로컬 AI 실행기 요청이 실패했어요(${res.status}).`, res.status);
+    return data as T;
+  }
+
+  return {
+    async uploadFiles(files: File[]): Promise<string[]> {
+      for (const f of files) {
+        if (f.size > MAX_UPLOAD_BYTES) throw new Error(`파일은 10MB까지 올릴 수 있어요: ${f.name}`);
+        if (!(UPLOAD_TYPES as readonly string[]).includes(f.type)) throw new Error(`이미지(PNG·JPEG·GIF·WEBP)나 PDF만 올릴 수 있어요: ${f.name}`);
+      }
+      const nonce = newNonce();
+      const used = new Set<string>();
+      const lines: string[] = [];
+      for (const [i, f] of files.entries()) {
+        let name = safeFilename(f.name, i);
+        if (used.has(name)) name = `${i}-${name}`.slice(0, 100);
+        used.add(name);
+        const r = await call<{ line: string }>(`/uploads?nonce=${nonce}&name=${encodeURIComponent(name)}`, { method: 'POST', body: f });
+        lines.push(r.line);
+      }
+      return lines;
+    },
+    async createIssue(o: IssueOptions) {
+      const r = await call<{ number: number; createdAt: string }>('/requests', { method: 'POST', json: { label: o.label, title: o.title, body: o.body } });
+      return { number: r.number, url: `${base}/requests/${r.number}/comments`, createdAt: r.createdAt };
+    },
+    async comments(n: number): Promise<Comment[]> {
+      return call<Comment[]>(`/requests/${n}/comments`);
+    },
+    async reply(n: number, body: string): Promise<void> {
+      await call(`/requests/${n}/comments`, { method: 'POST', json: { body } });
+    },
+  };
+}
 
 /** localStorage 읽기·쓰기. 시크릿 창 등에서 막혀 있으면 읽기는 null(토큰 없음으로 취급), 쓰기는 false */
 export function readLocal(key: string): string | null {

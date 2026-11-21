@@ -58,7 +58,8 @@ const { repo } = Astro.props;
             <span>이미지·PDF 첨부</span>
           </label>
           <ul class="file-list" data-file-list></ul>
-          <p class="note">파일당 10MB까지. 저장소가 공개라면 첨부는 AI가 처리하는 동안 GitHub에서 볼 수 있어요(반영되면 지워져요).</p>
+          <p class="note" data-github-note>파일당 10MB까지. 저장소가 공개라면 첨부는 AI가 처리하는 동안 GitHub에서 볼 수 있어요(반영되면 지워져요).</p>
+          <p class="note" data-local-note hidden>데모 모드: 이 컴퓨터의 Claude Code가 처리하고, 검증을 통과하면 사이트 파일에 바로 반영해요.</p>
         </div>
 
         <div class="row">
@@ -114,11 +115,15 @@ const { repo } = Astro.props;
   import { animate } from 'motion';
   import {
     GitHubError,
+    LOCAL_AGENT_URL,
+    LOCAL_RECENT_KEY,
     POLL_MS,
     RECENT_KEY,
     TOKEN_KEY,
     createClient,
+    createLocalClient,
     issueStatus,
+    localAgentAlive,
     parseIssueUrl,
     readLocal,
     writeLocal,
@@ -149,7 +154,21 @@ const { repo } = Astro.props;
   let timer: number | undefined;
   let lastStatus: AgentStatus | null = null;
 
-  const token = () => readLocal(TOKEN_KEY);
+  // 데모: 개발 모드(npm run dev)에서 로컬 AI 실행기(npm run agent:local)가 켜져 있으면 GitHub 대신 그쪽으로 보낸다
+  const localBase: string = import.meta.env.DEV ? import.meta.env.PUBLIC_LOCAL_AGENT || LOCAL_AGENT_URL : '';
+  let local = false;
+  async function detectLocal() {
+    if (localBase) local = await localAgentAlive(localBase);
+    $('[data-local-note]').hidden = !local;
+    $('[data-github-note]').hidden = local;
+    $('[data-clear-token]').hidden = local;
+  }
+  detectLocal();
+
+  const token = () => (local ? 'local' : readLocal(TOKEN_KEY));
+  const client = (t: string) => (local ? createLocalClient(localBase) : createClient(repo, t));
+  const recentKey = () => (local ? LOCAL_RECENT_KEY : RECENT_KEY);
+  const requestUrl = (n: number) => (local ? `${localBase}/requests/${n}/comments` : `https://github.com/${repo}/issues/${n}`);
 
   function show(view: View) {
     dialog.querySelectorAll<HTMLElement>('[data-view]').forEach((v) => (v.hidden = v.dataset.view !== view));
@@ -204,7 +223,8 @@ const { repo } = Astro.props;
   });
 
   // --- 진입점 ---
-  function openWith(o: IssueOptions) {
+  async function openWith(o: IssueOptions) {
+    await detectLocal();
     pending = o;
     setGithubLinks();
     if (token()) {
@@ -296,7 +316,7 @@ const { repo } = Astro.props;
   function showError(e: unknown) {
     const status = e instanceof GitHubError ? e.status : 0;
     $('[data-error-text]').textContent = e instanceof Error ? e.message : '요청하지 못했어요.';
-    $('[data-clear-token-inline]').hidden = ![401, 403, 404].includes(status);
+    $('[data-clear-token-inline]').hidden = local || ![401, 403, 404].includes(status);
     show('error');
   }
 
@@ -315,16 +335,16 @@ const { repo } = Astro.props;
     const title = $<HTMLInputElement>('[data-issue-title]').value.trim();
     let body = $<HTMLTextAreaElement>('[data-issue-body]').value;
     const files = [...(fileInput.files ?? [])];
-    const client = createClient(repo, t);
+    const api = client(t);
     sendBtn.disabled = true;
     sending.hidden = false;
     try {
       // 이슈를 만들기 전에 올린다. 업로드가 하나라도 실패하면 이슈는 만들지 않는다.
       if (files.length) sending.textContent = `첨부 ${files.length}개를 올리는 중…`;
-      const lines = await client.uploadFiles(files);
+      const lines = await api.uploadFiles(files);
       if (lines.length) body = `${body.trimEnd()}\n\n${lines.join('\n')}`;
       sending.textContent = '요청을 보내는 중…';
-      const issue = await client.createIssue({ label: pending.label, title, body });
+      const issue = await api.createIssue({ label: pending.label, title, body });
       const recent: RecentRequest = { number: issue.number, title, createdAt: issue.createdAt };
       saveRecent(recent);
       pending = null;
@@ -341,14 +361,14 @@ const { repo } = Astro.props;
   // --- 최근 요청 ---
   function recentList(): RecentRequest[] {
     try {
-      const v = JSON.parse(readLocal(RECENT_KEY) ?? '[]');
+      const v = JSON.parse(readLocal(recentKey()) ?? '[]');
       return Array.isArray(v) ? v.filter((x) => x && Number.isInteger(x.number) && typeof x.title === 'string' && typeof x.createdAt === 'string') : [];
     } catch {
       return [];
     }
   }
   function saveRecent(r: RecentRequest) {
-    writeLocal(RECENT_KEY, JSON.stringify([r, ...recentList().filter((x) => x.number !== r.number)].slice(0, 5)));
+    writeLocal(recentKey(), JSON.stringify([r, ...recentList().filter((x) => x.number !== r.number)].slice(0, 5)));
   }
   function showRecent() {
     const list = recentList();
@@ -365,7 +385,7 @@ const { repo } = Astro.props;
         m.className = 'meta';
         m.textContent = `#${r.number} · ${new Date(r.createdAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
         b.append(t, m);
-        b.addEventListener('click', () => openProgress({ ...r, url: `https://github.com/${repo}/issues/${r.number}` }));
+        b.addEventListener('click', () => openProgress({ ...r, url: requestUrl(r.number) }));
         li.append(b);
         return li;
       }),
@@ -373,7 +393,8 @@ const { repo } = Astro.props;
     $('[data-recent-empty]').hidden = list.length > 0;
     show('recent');
   }
-  $('[data-show-recent]').addEventListener('click', () => {
+  $('[data-show-recent]').addEventListener('click', async () => {
+    await detectLocal();
     showRecent();
     openDialog();
   });
@@ -441,7 +462,7 @@ const { repo } = Astro.props;
     result.hidden = status !== 'done' && status !== 'failed';
     if (status === 'done') {
       const pr = last.match(/PR #(\d+)/);
-      result.append('반영됐어요. 사이트에는 배포가 끝나면 보여요.');
+      result.append(local ? '반영됐어요. 페이지를 새로고침하면 보여요.' : '반영됐어요. 사이트에는 배포가 끝나면 보여요.');
       if (pr) {
         const a = document.createElement('a');
         a.href = `https://github.com/${repo}/pull/${pr[1]}`;
@@ -469,7 +490,7 @@ const { repo } = Astro.props;
     const r = current;
     if (!t || !r || !dialog.open) return stopPolling();
     try {
-      const comments = await createClient(repo, t).comments(r.number);
+      const comments = await client(t).comments(r.number);
       if (current !== r) return; // 그 사이 다른 요청을 열었으면 버린다
       const { status, slow } = issueStatus(comments, r.createdAt, new Date());
       renderChat(comments);
@@ -498,7 +519,7 @@ const { repo } = Astro.props;
     const btn = answer.querySelector<HTMLButtonElement>('button')!;
     btn.disabled = true;
     try {
-      await createClient(repo, t).reply(r.number, text);
+      await client(t).reply(r.number, text);
       box.value = '';
       answer.hidden = true;
       lastStatus = 'working';

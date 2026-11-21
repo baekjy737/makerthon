@@ -10,7 +10,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "vitest run"
+    "test": "vitest run",
+    "agent:local": "node scripts/local-agent.mjs"
   },
   "dependencies": {
     "@astrojs/markdown-satteri": "^0.4.10",
