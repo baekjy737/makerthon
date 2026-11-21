@@ -1,0 +1,91 @@
+---
+// 메인 화면의 추천 미리보기: "다음에 할 공부"(최신 3개)와 "관심 분야와 맞는 기회"(적합도 높은 3개).
+// 공개 근거가 없는 추천은 빼고 고른다. 보여 줄 카드가 0개인 섹션은 제목까지 그리지 않는다.
+import { getCollection } from 'astro:content';
+import NextCard from './NextCard.astro';
+import MatchCard from './MatchCard.astro';
+import { resolveFrom } from '../lib/recommend';
+import { withBase } from '../lib/url';
+
+const entries = await getCollection('entries');
+const grounded = <T extends { data: { from: string[] } }>(xs: T[]) => xs.filter((x) => resolveFrom(x.data.from, entries).length > 0);
+
+const nexts = grounded(await getCollection('next'))
+  .sort((a, b) => b.data.created.getTime() - a.data.created.getTime())
+  .slice(0, 3);
+const matches = grounded(await getCollection('matches'))
+  .sort((a, b) => b.data.score - a.data.score)
+  .slice(0, 3);
+---
+
+{
+  (nexts.length > 0 || matches.length > 0) && (
+    <div class="rp container">
+      {nexts.length > 0 && (
+        <section class="rp-section" aria-labelledby="rp-next">
+          <header class="rp-head">
+            <h2 id="rp-next">다음에 할 공부</h2>
+            <a class="rp-all" href={withBase('next/')}>
+              전체 보기 <span aria-hidden="true">→</span>
+            </a>
+          </header>
+          <div class="rp-grid">
+            {nexts.map((item) => (
+              <NextCard item={item} entries={entries} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {matches.length > 0 && (
+        <section class="rp-section" aria-labelledby="rp-match">
+          <header class="rp-head">
+            <h2 id="rp-match">관심 분야와 맞는 기회</h2>
+            <a class="rp-all" href={withBase('match/')}>
+              전체 보기 <span aria-hidden="true">→</span>
+            </a>
+          </header>
+          <div class="rp-grid">
+            {matches.map((item) => (
+              <MatchCard item={item} entries={entries} />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+<style>
+  .rp {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(3rem, 7vw, 5rem);
+    padding-block: clamp(3rem, 8vw, 6rem);
+  }
+  .rp-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .rp-head h2 {
+    font-size: clamp(1.375rem, 3vw, 1.875rem);
+    letter-spacing: -0.02em;
+  }
+  .rp-all {
+    flex: none;
+    font-size: 0.875rem;
+    color: var(--muted);
+    transition: color 160ms ease-out;
+  }
+  .rp-all:hover {
+    color: var(--fg);
+  }
+  .rp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+    gap: 1rem;
+  }
+</style>

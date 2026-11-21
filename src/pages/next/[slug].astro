@@ -1,0 +1,373 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import PlanButton from '../../components/PlanButton.astro';
+import { courses } from '../../lib/data';
+import { resolveFrom } from '../../lib/recommend';
+import { section } from '../../lib/study';
+import { TYPE_LABELS } from '../../lib/types';
+import { withBase } from '../../lib/url';
+
+// 공개 근거가 하나라도 있는 추천만 페이지를 만든다
+export async function getStaticPaths() {
+  const entries = await getCollection('entries');
+  const items = await getCollection('next');
+  return items
+    .map((item) => ({ item, from: resolveFrom(item.data.from, entries) }))
+    .filter(({ from }) => from.length > 0)
+    .map(({ item, from }) => ({ params: { slug: item.id }, props: { item, from } }));
+}
+
+interface Props {
+  item: CollectionEntry<'next'>;
+  from: CollectionEntry<'entries'>[];
+}
+
+const { item, from } = Astro.props;
+const { data } = item;
+const { Content } = await render(item);
+
+// 과목명은 교과과정표의 "유전학(이)"처럼 꼬리표가 붙어 있을 수 있다
+const courseOf = (name: string) => courses.find((c) => c.name === name) ?? courses.find((c) => c.name.startsWith(`${name}(`));
+
+const ym = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+const bullets = (md: string) =>
+  md
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[-*]\s+/, '').trim())
+    .filter(Boolean);
+---
+
+<Base title={data.topic} description={`다음에 할 공부: ${data.next.join(', ')}`}>
+  <article class="detail container">
+    <a class="back" href={withBase('next/')}><span aria-hidden="true">←</span> 다음에 할 공부</a>
+
+    <header class="d-head">
+      <p class="d-eyebrow">다음에 할 공부</p>
+      <h1>{data.topic}</h1>
+      <div class="d-actions">
+        <PlanButton id={`next:${item.id}`} />
+      </div>
+    </header>
+
+    <ol class="steps">
+      <li class="step">
+        <p class="step-k"><span class="step-n">1</span>이미 공부한 내용</p>
+        {
+          data.learned.length > 0 ? (
+            <ul class="step-list">
+              {data.learned.map((x) => (
+                <li>{x}</li>
+              ))}
+            </ul>
+          ) : (
+            <p class="step-empty">아직 정리된 내용이 없어요.</p>
+          )
+        }
+      </li>
+      <li class="step">
+        <p class="step-k"><span class="step-n">2</span>다음 개념</p>
+        <ul class="chips">
+          {data.next.map((x) => <li>{x}</li>)}
+        </ul>
+      </li>
+      <li class="step">
+        <p class="step-k"><span class="step-n">3</span>이어서 볼 자료·과목</p>
+        {
+          data.resources.length > 0 ? (
+            <ul class="step-list">
+              {data.resources.map((r) => {
+                const c = r.course ? courseOf(r.course) : undefined;
+                return (
+                  <li>
+                    {r.url ? (
+                      <a class="ext" href={r.url} target="_blank" rel="noopener">
+                        {r.label} <span aria-hidden="true">↗</span>
+                      </a>
+                    ) : (
+                      <span>{r.label}</span>
+                    )}
+                    {r.course && (
+                      <span class="course">
+                        과목{c ? ` · ${c.code} ${c.name} · ${c.kind} · ${c.year}학년 · ${c.credits}학점` : r.course !== r.label ? ` · ${r.course}` : ''}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p class="step-empty">추천된 자료가 없어요.</p>
+          )
+        }
+      </li>
+      <li class="step">
+        <p class="step-k"><span class="step-n">4</span>탐구할 연구 질문</p>
+        {
+          data.questions.length > 0 ? (
+            <ul class="step-list questions">
+              {data.questions.map((q) => (
+                <li>{q}</li>
+              ))}
+            </ul>
+          ) : (
+            <p class="step-empty">아직 질문이 없어요.</p>
+          )
+        }
+      </li>
+    </ol>
+
+    <section class="d-body" aria-label="추천 설명">
+      <Content />
+    </section>
+
+    <section class="evidence" aria-labelledby="ev-title">
+      <h2 id="ev-title">출발한 기록 <span class="count">{from.length}</span></h2>
+      {
+        from.map((e) => {
+          const q = bullets(section(e.body ?? '', '남은 질문'));
+          return (
+            <details class="ev">
+              <summary>
+                <span class="ev-type">{TYPE_LABELS[e.data.type]}</span>
+                <span class="ev-title">{e.data.title}</span>
+                <span class="ev-date">{ym(e.data.date)}</span>
+              </summary>
+              <div class="ev-body">
+                <p>{e.data.summary}</p>
+                {q.length > 0 && (
+                  <>
+                    <p class="ev-k">남은 질문</p>
+                    <ul>
+                      {q.map((x) => (
+                        <li>{x}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                <a class="ev-link" href={withBase(`portfolio/${e.id}/`)}>
+                  기록 전체 보기 <span aria-hidden="true">→</span>
+                </a>
+              </div>
+            </details>
+          );
+        })
+      }
+    </section>
+  </article>
+</Base>
+
+<style>
+  .detail {
+    max-width: 52rem;
+    padding-block: clamp(2rem, 6vw, 4rem) 6rem;
+  }
+  .back {
+    display: inline-flex;
+    gap: 0.375rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+    transition: color 160ms ease-out;
+  }
+  .back:hover {
+    color: var(--fg);
+  }
+
+  .d-head {
+    margin: 1.75rem 0 2.5rem;
+  }
+  .d-eyebrow {
+    font-family: var(--font-ko-bold);
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+  }
+  h1 {
+    font-size: clamp(1.75rem, 4.5vw, 2.75rem);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+  .d-actions {
+    margin-top: 1.25rem;
+  }
+
+  /* 1 → 4 흐름: 왼쪽 세로선으로 이어지는 단계 */
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .step {
+    position: relative;
+    padding: 0 0 2rem 2.75rem;
+  }
+  .step::before {
+    content: '';
+    position: absolute;
+    left: 0.875rem;
+    top: 2rem;
+    bottom: 0.25rem;
+    width: 1px;
+    background: color-mix(in srgb, var(--fg) 14%, transparent);
+  }
+  .step:last-child::before {
+    display: none;
+  }
+  .step-k {
+    position: relative;
+    font-family: var(--font-ko-bold);
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    line-height: 1.75rem;
+  }
+  .step-n {
+    position: absolute;
+    left: -2.75rem;
+    top: 0;
+    display: grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+  .step-list {
+    margin: 0;
+    padding-left: 1.125rem;
+    line-height: 1.7;
+  }
+  .step-list li + li {
+    margin-top: 0.25rem;
+  }
+  .questions li {
+    font-family: var(--font-ko-bold);
+  }
+  .step-empty {
+    color: var(--muted);
+    font-size: 0.9375rem;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .chips li {
+    padding: 0.375rem 0.875rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    font-size: 0.9375rem;
+  }
+  .ext {
+    color: var(--accent);
+  }
+  .course {
+    display: block;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  .d-body {
+    margin: 1rem 0 3rem;
+    padding: 1.5rem 1.75rem;
+    border-radius: 1.25rem;
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
+    color: color-mix(in srgb, var(--fg) 88%, var(--muted));
+    line-height: 1.8;
+  }
+  .d-body :global(p + p) {
+    margin-top: 0.75rem;
+  }
+  .d-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+
+  .evidence h2 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .count {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    color: var(--muted);
+    margin-left: 0.25rem;
+  }
+  .ev {
+    border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  .ev:last-child {
+    border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  .ev summary {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 1rem 0;
+    cursor: pointer;
+    list-style: none;
+  }
+  .ev summary::-webkit-details-marker {
+    display: none;
+  }
+  .ev summary::after {
+    content: '+';
+    margin-left: auto;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    transition: transform 200ms var(--ease-out, ease-out);
+  }
+  .ev[open] summary::after {
+    transform: rotate(45deg);
+  }
+  .ev-type {
+    flex: none;
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+  .ev-title {
+    min-width: 0;
+  }
+  .ev-date {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .ev-body {
+    padding: 0 0 1.25rem;
+    color: color-mix(in srgb, var(--fg) 86%, var(--muted));
+    font-size: 0.9375rem;
+  }
+  .ev-k {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .ev-body ul {
+    margin: 0.25rem 0 0;
+    padding-left: 1.125rem;
+  }
+  .ev-link {
+    display: inline-block;
+    margin-top: 0.875rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .ev-link:hover {
+    color: var(--fg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ev summary::after {
+      transition: none;
+    }
+  }
+</style>

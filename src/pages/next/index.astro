@@ -1,0 +1,77 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import NextCard from '../../components/NextCard.astro';
+import { resolveFrom } from '../../lib/recommend';
+import { withBase } from '../../lib/url';
+
+const entries = await getCollection('entries');
+// 공개 근거가 없는 추천은 빼고, 최신순
+const items = (await getCollection('next'))
+  .filter((x) => resolveFrom(x.data.from, entries).length > 0)
+  .sort((a, b) => b.data.created.getTime() - a.data.created.getTime());
+---
+
+<Base title="다음에 할 공부" description="내 공부 기록에서 출발한 다음 공부 추천">
+  <div class="list-page container">
+    <header class="lp-head">
+      <p class="lp-eyebrow">NEXT</p>
+      <h1>다음에 할 공부</h1>
+      <p class="lp-lead">수업·논문·공부자료 기록에서 남은 질문을 이어 갈 다음 개념과 자료예요. 마음에 드는 건 계획에 담아 두세요.</p>
+      <a class="lp-link" href={withBase('plan/')}>내 공부 계획 보기 <span aria-hidden="true">→</span></a>
+    </header>
+
+    {
+      items.length === 0 ? (
+        <p class="lp-empty">아직 추천이 없어요. 공부 기록을 남기면 AI가 다음 공부를 추천해요.</p>
+      ) : (
+        <div class="lp-grid">
+          {items.map((item) => (
+            <NextCard item={item} entries={entries} />
+          ))}
+        </div>
+      )
+    }
+  </div>
+</Base>
+
+<style>
+  .list-page {
+    padding-block: clamp(2rem, 6vw, 4.5rem) 6rem;
+  }
+  .lp-head {
+    margin-bottom: 2.5rem;
+  }
+  .lp-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+  }
+  h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+  .lp-lead {
+    margin-top: 0.75rem;
+    color: var(--muted);
+    max-width: 38rem;
+  }
+  .lp-link {
+    display: inline-block;
+    margin-top: 1rem;
+    font-size: 0.9375rem;
+    color: var(--accent);
+  }
+  .lp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+    gap: 1rem;
+  }
+  .lp-empty {
+    color: var(--muted);
+    padding: 3rem 0;
+  }
+</style>

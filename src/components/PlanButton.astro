@@ -1,0 +1,149 @@
+---
+// [계획에 담기] 토글. id는 `next:<slug>` 또는 `match:<slug>`. 담은 목록은 localStorage `plan`에만 저장한다.
+// 상태가 바뀌면 document에 `plan:change` 이벤트를 보낸다(/plan 페이지가 목록을 다시 그린다).
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+---
+
+<span class="plan">
+  <button type="button" class="plan-btn" data-plan-toggle data-plan-id={id} aria-pressed="false">
+    <span class="plan-icon" aria-hidden="true"></span>
+    <span class="plan-label" data-plan-label>계획에 담기</span>
+  </button>
+  <span class="plan-note" data-plan-note aria-live="polite"></span>
+</span>
+
+<script>
+  import { planStore } from '../lib/plan';
+
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  const store = planStore(storage);
+
+  function paint() {
+    const saved = new Set(store.list());
+    document.querySelectorAll<HTMLButtonElement>('[data-plan-toggle]').forEach((btn) => {
+      const on = saved.has(btn.dataset.planId!);
+      btn.setAttribute('aria-pressed', String(on));
+      btn.querySelector('[data-plan-label]')!.textContent = on ? '계획에 담김' : '계획에 담기';
+    });
+  }
+
+  document.addEventListener('click', (ev) => {
+    const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-plan-toggle]');
+    if (!btn) return;
+    const note = btn.parentElement?.querySelector<HTMLElement>('[data-plan-note]');
+    if (!store.ok) {
+      if (note) note.textContent = '이 브라우저에는 저장할 수 없어요';
+      return;
+    }
+    store.toggle(btn.dataset.planId!);
+    paint();
+    if (note) note.textContent = '';
+    document.dispatchEvent(new CustomEvent('plan:change'));
+  });
+
+  // 다른 탭에서 담거나 뺀 것도 반영
+  window.addEventListener('storage', (ev) => {
+    if (ev.key === null || ev.key === 'plan') {
+      paint();
+      document.dispatchEvent(new CustomEvent('plan:change'));
+    }
+  });
+
+  paint();
+</script>
+
+<style>
+  .plan {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+  }
+  .plan-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--fg) 20%, transparent);
+    background: transparent;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition:
+      transform 100ms ease-out,
+      background-color 160ms ease-out,
+      border-color 160ms ease-out,
+      color 160ms ease-out;
+  }
+  .plan-btn:hover {
+    border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+  }
+  .plan-btn:active {
+    transform: scale(0.96);
+  }
+  .plan-btn[aria-pressed='true'] {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
+  }
+
+  /* + 가 담기면 ✓ 로 */
+  .plan-icon {
+    position: relative;
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .plan-icon::before,
+  .plan-icon::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0.75rem;
+    height: 1.5px;
+    border-radius: 1px;
+    background: currentColor;
+    transform: translate(-50%, -50%);
+    transition: transform 200ms var(--ease-out, ease-out);
+  }
+  .plan-icon::after {
+    transform: translate(-50%, -50%) rotate(90deg);
+  }
+  .plan-btn[aria-pressed='true'] .plan-icon {
+    color: var(--accent);
+  }
+  .plan-btn[aria-pressed='true'] .plan-icon::before {
+    width: 0.4rem;
+    transform: translate(-85%, 10%) rotate(45deg);
+  }
+  .plan-btn[aria-pressed='true'] .plan-icon::after {
+    width: 0.75rem;
+    transform: translate(-30%, -20%) rotate(-50deg);
+  }
+
+  .plan-note {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .plan-note:empty {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .plan-btn:active {
+      transform: none;
+    }
+    .plan-icon::before,
+    .plan-icon::after {
+      transition: none;
+    }
+  }
+</style>

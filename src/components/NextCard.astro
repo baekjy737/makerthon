@@ -1,0 +1,230 @@
+---
+// "다음에 할 공부" 카드. 근거 기록 중 공개 항목이 하나도 없으면 아무것도 그리지 않는다.
+import type { CollectionEntry } from 'astro:content';
+import PlanButton from './PlanButton.astro';
+import { resolveFrom } from '../lib/recommend';
+import { withBase } from '../lib/url';
+
+interface Props {
+  item: CollectionEntry<'next'>;
+  entries: CollectionEntry<'entries'>[];
+}
+
+const { item, entries } = Astro.props;
+const { data } = item;
+const from = resolveFrom(data.from, entries);
+const href = withBase(`next/${item.id}/`);
+const resources = data.resources.slice(0, 2);
+---
+
+{
+  from.length > 0 && (
+    <article class="rc" data-plan-item={`next:${item.id}`}>
+      <p class="rc-eyebrow">다음에 할 공부</p>
+      <h3 class="rc-title">
+        <a href={href}>{data.topic}</a>
+      </h3>
+
+      <div class="flow">
+        {data.learned.length > 0 && (
+          <div class="flow-col">
+            <p class="flow-label">공부한 것</p>
+            <ul class="flow-list muted">
+              {data.learned.slice(0, 2).map((x) => (
+                <li>{x}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {data.learned.length > 0 && (
+          <span class="flow-arrow" aria-hidden="true">
+            →
+          </span>
+        )}
+        <div class="flow-col">
+          <p class="flow-label">다음 개념</p>
+          <ul class="flow-chips">
+            {data.next.map((x) => (
+              <li>{x}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {resources.length > 0 && (
+        <p class="rc-resources">
+          <span class="rc-k">이어서 볼 것</span>
+          {resources.map((r, i) => (
+            <>
+              {i > 0 && <span aria-hidden="true"> · </span>}
+              {r.url ? (
+                <a href={r.url} target="_blank" rel="noopener">
+                  {r.label}
+                </a>
+              ) : (
+                <span>
+                  {r.label}
+                  {r.course && r.course !== r.label && ` (${r.course})`}
+                  {r.course && ' 과목'}
+                </span>
+              )}
+            </>
+          ))}
+        </p>
+      )}
+
+      <div class="rc-from">
+        <span class="rc-k">출발한 기록</span>
+        <ul>
+          {from.map((e) => (
+            <li>
+              <a href={withBase(`portfolio/${e.id}/`)}>{e.data.title}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div class="rc-foot">
+        <PlanButton id={`next:${item.id}`} />
+        <a class="rc-more" href={href}>
+          자세히 <span aria-hidden="true">→</span>
+        </a>
+      </div>
+    </article>
+  )
+}
+
+<style>
+  .rc {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-width: 0;
+    height: 100%;
+    padding: clamp(1.25rem, 3vw, 1.75rem);
+    border: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+    border-radius: 1.25rem;
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--fg) 5%, transparent), transparent 58%),
+      color-mix(in srgb, var(--bg) 94%, var(--fg));
+  }
+  .rc[hidden] {
+    display: none;
+  }
+  .rc-eyebrow {
+    font-family: var(--font-ko-bold);
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+  }
+  .rc-title {
+    font-size: clamp(1.125rem, 2vw, 1.3125rem);
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    margin-top: -0.5rem;
+  }
+  .rc-title a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .flow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.3fr);
+    align-items: start;
+    gap: 0.75rem;
+  }
+  .flow:has(> .flow-col:only-child) {
+    grid-template-columns: 1fr;
+  }
+  .flow-label,
+  .rc-k {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 0.375rem;
+  }
+  .flow-arrow {
+    align-self: center;
+    color: var(--accent);
+    font-size: 1.125rem;
+    padding-top: 1rem;
+  }
+  .flow-list {
+    margin: 0;
+    padding-left: 1rem;
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .flow-chips,
+  .rc-from ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .flow-chips li {
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+
+  .rc-resources {
+    font-size: 0.875rem;
+  }
+  .rc-resources a,
+  .rc-from a {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--fg) 30%, transparent);
+    text-underline-offset: 0.2em;
+  }
+  .rc-from li a {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent);
+    font-size: 0.8125rem;
+    text-decoration: none;
+    transition: border-color 160ms ease-out;
+  }
+  .rc-from li a:hover {
+    border-color: color-mix(in srgb, var(--fg) 40%, transparent);
+  }
+
+  .rc-foot {
+    margin-top: auto;
+    padding-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .rc-more {
+    font-size: 0.875rem;
+    color: var(--muted);
+    transition: color 160ms ease-out;
+  }
+  .rc-more:hover {
+    color: var(--fg);
+  }
+
+  @media (max-width: 480px) {
+    .flow {
+      grid-template-columns: 1fr;
+    }
+    .flow-arrow {
+      padding: 0;
+      transform: rotate(90deg);
+      justify-self: start;
+    }
+  }
+</style>
