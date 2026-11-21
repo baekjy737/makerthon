@@ -60,7 +60,7 @@ const actions = [
         {
           actions.map((a, i) => (
             <a class:list={['action', { primary: i === 0 }]} href={a.url} target="_blank" rel="noopener">
-              {a.plus && <span aria-hidden="true">+ </span>}
+              {a.plus && <span class="plus" aria-hidden="true">+</span>}
               {a.label}
               <span class="visually-hidden">(GitHub 이슈 작성 화면이 새 탭으로 열려요)</span>
             </a>
@@ -197,6 +197,9 @@ const actions = [
   }
   .action:active {
     transform: scale(0.97);
+  }
+  .plus {
+    margin-right: 0.3em;
   }
 
   .filter {
