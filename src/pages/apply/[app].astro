@@ -102,14 +102,15 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
 
 <style>
   .application {
-    --rule: color-mix(in srgb, var(--muted) 48%, transparent);
+    --rule: color-mix(in srgb, var(--fg) 18%, var(--bg));
+    --surface: color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --secondary: color-mix(in srgb, var(--fg) 24%, var(--muted));
     max-width: 64rem;
-    padding-block: clamp(2rem, 6vw, 5rem);
+    padding-block: clamp(1.5rem, 4vw, 3.5rem) clamp(2.5rem, 6vw, 5rem);
   }
 
   .application-heading {
-    padding-bottom: clamp(1.75rem, 5vw, 3.5rem);
-    border-bottom: 1px solid var(--rule);
+    margin-bottom: clamp(1.5rem, 4vw, 2.75rem);
   }
 
   .back,
@@ -117,23 +118,38 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
   .deadline,
   .empty,
   .draft-count {
-    color: var(--muted);
+    color: var(--secondary);
+  }
+
+  .back {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    font-size: 0.875rem;
   }
 
   .company {
-    margin-top: 1.5rem;
-    font-size: 1.15rem;
+    margin-top: clamp(0.65rem, 2vw, 1.4rem);
+    font-size: 1rem;
   }
 
   h1 {
     margin-top: 0.25rem;
-    font-size: clamp(2.5rem, 7vw, 4.75rem);
+    max-width: 19ch;
+    font-size: clamp(2rem, 3.5vw + 0.85rem, 4.5rem);
+    line-height: 1.12;
     letter-spacing: -0.045em;
+    text-wrap: balance;
   }
 
-  .deadline,
+  .deadline {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+
   .actions {
-    margin-top: 1rem;
+    margin-top: 1.15rem;
   }
 
   .actions {
@@ -148,17 +164,19 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
     align-items: center;
     gap: 0.5rem;
     min-height: 2.75rem;
-    padding-inline: 0.75rem;
-    border-radius: 0.5rem;
+    padding-inline: 0.95rem;
+    border-radius: 2rem;
   }
 
   .resume-link {
     border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+    font-family: var(--font-ko-bold);
   }
 
   .actions a:hover,
   .actions a:active {
-    background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+    background: color-mix(in srgb, var(--accent) 25%, var(--bg));
   }
 
   a {
@@ -173,8 +191,22 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
   .analysis {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.5rem 2rem;
-    margin-top: 2rem;
+    border: 1px solid var(--rule);
+    border-radius: 0.875rem;
+    background: var(--surface);
+  }
+
+  .analysis section {
+    padding: clamp(1rem, 3vw, 1.5rem);
+  }
+
+  .analysis section + section {
+    border-inline-start: 1px solid var(--rule);
+  }
+
+  .analysis h2 {
+    font-size: 1.15rem;
+    margin-bottom: 0.65rem;
   }
 
   .analysis ul {
@@ -208,8 +240,13 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
 
   .match-list li,
   .draft {
-    padding-block: 1rem;
     border-top: 1px solid var(--rule);
+    padding-block: 1rem;
+  }
+
+  .match-list li p {
+    max-width: 60ch;
+    color: var(--secondary);
   }
 
   .match-heading {
@@ -217,6 +254,7 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
     align-items: baseline;
     justify-content: space-between;
     gap: 1rem;
+    max-width: 42rem;
   }
 
   .score {
@@ -226,12 +264,20 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
 
   meter {
     display: block;
-    width: min(100%, 24rem);
+    width: min(100%, 42rem);
+    height: 0.75rem;
     margin-block: 0.5rem;
     accent-color: var(--accent);
   }
 
+  meter::-webkit-meter-bar {
+    border: 1px solid var(--rule);
+    border-radius: 2rem;
+    background: var(--surface);
+  }
+
   meter::-webkit-meter-optimum-value {
+    border-radius: 2rem;
     background: var(--accent);
   }
 
@@ -242,6 +288,8 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
 
   .draft-body {
     margin-top: 0.75rem;
+    max-width: 60ch;
+    line-height: 1.7;
   }
 
   .draft-body :global(p + p) {
@@ -251,6 +299,11 @@ const postingUrl = /^https?:\/\//i.test(data.url ?? '') ? data.url : undefined;
   @media (max-width: 38rem) {
     .analysis {
       grid-template-columns: 1fr;
+    }
+
+    .analysis section + section {
+      border-inline-start: 0;
+      border-top: 1px solid var(--rule);
     }
   }
 </style>
