@@ -11,11 +11,18 @@
     "preview": "astro preview",
     "astro": "astro",
     "test": "vitest run",
-    "agent:local": "node scripts/local-agent.mjs"
+    "agent:local": "node --env-file-if-exists=.env scripts/local-agent.mjs",
+    "seed": "node --env-file-if-exists=.env scripts/seed-firebase.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
     "@astrojs/markdown-satteri": "^0.4.10",
+    "@astrojs/vercel": "^11.0.22",
+    "@vercel/blob": "^2.9.0",
+    "@vercel/functions": "^3.11.3",
     "astro": "^7.4.13",
+    "firebase": "^13.4.0",
+    "firebase-admin": "^14.5.1",
     "motion": "^14.14.0",
     "yaml": "^2.9.1"
   },

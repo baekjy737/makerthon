@@ -13,6 +13,11 @@ const matchPattern = new RegExp('^content/matches/' + slug + '\\.md$');
 const openingPattern = new RegExp('^content/openings/[0-9]{4}-(?:0[1-9]|1[0-2])-' + slug + '\\.md$');
 const maxBytes = 25 * 1024 * 1024;
 
+// 저장소 상대 경로를 읽고 쓸 기준 폴더. CLI는 현재 폴더, AI 파이프라인(scripts/agent)은 작업 폴더(applyAt).
+// 한 번에 한 작업 폴더만 다룬다(파이프라인이 요청을 하나씩 처리한다).
+let root = '';
+const at = path => (root ? join(root, path) : path);
+
 /** @param {string} path @returns {'entry' | 'application' | 'next' | 'match' | 'opening' | null} */
 export function contentPath(path) {
   if (typeof path !== 'string') return null;
@@ -29,7 +34,7 @@ function check(condition, message) {
 }
 
 function readJson(path) {
-  return JSON.parse(readFileSync(path, 'utf8'));
+  return JSON.parse(readFileSync(at(path), 'utf8'));
 }
 
 // Call with a validated repository-relative path, before reading or replacing it.
@@ -38,7 +43,7 @@ function checkFile(path) {
   for (const part of path.split('/')) {
     check(part && part !== '.' && part !== '..', '잘못된 파일 경로입니다.');
     current = current ? current + '/' + part : part;
-    const stat = lstatSync(current, { throwIfNoEntry: false });
+    const stat = lstatSync(at(current), { throwIfNoEntry: false });
     if (stat) {
       check(current === path ? stat.isFile() : stat.isDirectory(), '허용되지 않는 파일 또는 디렉터리입니다.');
     }
@@ -230,10 +235,10 @@ function openingSourceKey(value) {
 function existingOpeningSources(parse) {
   const sources = new Set(readJson('data/interns.json').map(intern => openingSourceKey(intern.url)).filter(Boolean));
   const directory = 'content/openings';
-  if (existsSync(directory)) {
-    for (const file of readdirSync(directory, { withFileTypes: true })) {
+  if (existsSync(at(directory))) {
+    for (const file of readdirSync(at(directory), { withFileTypes: true })) {
       if (!file.isFile() || !file.name.endsWith('.md')) continue;
-      const { data } = frontmatter(readFileSync(join(directory, file.name), 'utf8'), parse);
+      const { data } = frontmatter(readFileSync(at(join(directory, file.name)), 'utf8'), parse);
       const url = openingSourceKey(data.url);
       if (url) sources.add(url);
     }
@@ -285,8 +290,8 @@ async function verifyRecommendations(files, pending = new Map()) {
   const { parse } = await import('yaml');
   function readData(path) {
     checkFile(path);
-    check(pending.has(path) || existsSync(path), '추천 파일 또는 근거가 된 공개 항목이 없습니다.');
-    return frontmatter(pending.get(path) ?? readFileSync(path, 'utf8'), parse).data;
+    check(pending.has(path) || existsSync(at(path)), '추천 파일 또는 근거가 된 공개 항목이 없습니다.');
+    return frontmatter(pending.get(path) ?? readFileSync(at(path), 'utf8'), parse).data;
   }
 
   const labs = readJson('data/labs.json');
@@ -315,8 +320,8 @@ async function verifyRecommendations(files, pending = new Map()) {
     }
   }
   for (const directory of new Set(paths.map(dirname))) {
-    if (!existsSync(directory)) continue;
-    for (const file of readdirSync(directory, { withFileTypes: true })) {
+    if (!existsSync(at(directory))) continue;
+    for (const file of readdirSync(at(directory), { withFileTypes: true })) {
       if (!file.isFile() || !file.name.endsWith('.md')) continue;
       const path = directory + '/' + file.name;
       if (paths.includes(path)) continue;
@@ -330,10 +335,24 @@ async function verifyRecommendations(files, pending = new Map()) {
   }
 }
 
-async function apply() {
-  const result = readJson(process.env.AI_RESULT_FILE);
+/**
+ * 작업 폴더 dir에서 apply를 실행하고, 쓴 파일의 저장소 상대 경로를 돌려준다.
+ * 결과는 dir/.archive-input/result.json, 요청은 dir/.archive-input/issue.json에서 읽는다.
+ * @param {string} dir @returns {Promise<string[]>}
+ */
+export async function applyAt(dir) {
+  root = dir;
+  try {
+    return await apply(input + '/result.json');
+  } finally {
+    root = '';
+  }
+}
+
+async function apply(resultPath = process.env.AI_RESULT_FILE) {
+  const result = readJson(resultPath);
   check(['ready', 'question', 'unchanged'].includes(result.status) && typeof result.message === 'string', '잘못된 처리 결과입니다.');
-  if (result.status !== 'ready') return;
+  if (result.status !== 'ready') return [];
   check(Array.isArray(result.files) && Array.isArray(result.attachments), '변경 파일 또는 첨부 목록이 없습니다.');
   const { route } = readJson(input + '/issue.json');
   check(route !== 'opening' || result.attachments.length === 0, '공고 수집 요청에는 첨부 파일을 추가할 수 없습니다.');
@@ -362,7 +381,7 @@ async function apply() {
       check(url, '공고 원문은 절대 HTTP(S) URL이어야 합니다.');
       openingSources ??= existingOpeningSources(parse);
       if (openingSources.has(url)) continue;
-      check(!existsSync(path), '이미 있는 공고 파일을 덮어쓸 수 없습니다.');
+      check(!existsSync(at(path)), '이미 있는 공고 파일을 덮어쓸 수 없습니다.');
       labIds ??= new Set(readJson('data/labs.json').map(lab => lab.id));
       checkOpening(data, labIds);
       openingSources.add(url);
@@ -373,7 +392,7 @@ async function apply() {
     for (const link of data.links ?? []) checkUrl(link.url);
     if (kind === 'entry') {
       const id = path.slice('content/entries/'.length, -'.md'.length);
-      const old = existsSync(path) ? frontmatter(readFileSync(path, 'utf8'), parse).data : null;
+      const old = existsSync(at(path)) ? frontmatter(readFileSync(at(path), 'utf8'), parse).data : null;
       check(old || !id.includes('/'), '새 활동은 entries 바로 아래에 작성해야 합니다.');
       check(data.public === undefined || typeof data.public === 'boolean', '잘못된 공개 설정입니다.');
       check(data.attachments === undefined || Array.isArray(data.attachments)
@@ -400,7 +419,7 @@ async function apply() {
     const target = 'public/' + relative;
     checkFile(source);
     checkFile(target);
-    const bytes = readFileSync(source);
+    const bytes = readFileSync(at(source));
     check(filename(bytes) === name, '첨부 파일 내용이 바뀌었습니다.');
     changes.set(target, bytes);
     record.verifiedAttachments.add(relative);
@@ -411,9 +430,10 @@ async function apply() {
     }
   }
   for (const [path, bytes] of changes) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, bytes);
+    mkdirSync(dirname(at(path)), { recursive: true });
+    writeFileSync(at(path), bytes);
   }
+  return [...changes.keys()];
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

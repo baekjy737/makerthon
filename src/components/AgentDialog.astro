@@ -1,8 +1,11 @@
 ---
 // 사이트 안 AI 요청 대화창. Base.astro에 한 번 붙는다.
 // 페이지의 이슈 작성 링크(https://github.com/<repo>/issues/new?…) 클릭과 `agent:open` 이벤트를 받아 연다.
-// 학생 PAT(localStorage `agent-token`)로 이슈를 만들고 첨부를 올리고, 10초마다 댓글을 읽어 진행을 보여 준다.
-// AI 실행은 Actions(ai.yml)가 하고, 이 창은 GitHub API만 부른다.
+// 보내는 곳은 셋 중 하나다(위에서부터 먼저 되는 것):
+//   1. 데모: 이 컴퓨터의 로컬 실행기(npm run agent:local, Claude Code)
+//   2. 서버: Vercel 함수(/api/agent/*, Anthropic API). 주인 Google 로그인(Firebase Auth)이 필요하다
+//   3. GitHub: 학생 PAT로 이슈를 만들고 Actions(ai.yml)가 처리한다(Firebase 없이 GitHub Pages로 배포한 경우)
+// 10초마다 대화를 읽어 진행을 보여 준다.
 interface Props {
   /** owner/name */
   repo: string;
@@ -21,8 +24,14 @@ const { repo } = Astro.props;
       </button>
     </header>
 
-    <!-- 1. 토큰 없음 -->
+    <!-- 1. 로그인·토큰 없음 -->
     <section class="view" data-view="auth" hidden>
+      <div data-server-auth hidden>
+        <p class="lead">사이트 주인 계정으로 로그인하면 이 창에서 AI에게 바로 요청하고 질문에 답할 수 있어요.</p>
+        <button type="button" class="btn primary block" data-google-login>Google로 로그인</button>
+        <p class="err" data-login-err hidden></p>
+      </div>
+      <div data-github-auth>
       <p class="lead">GitHub 이슈 작성 화면에서 보내거나, 토큰을 연결해 이 창에서 바로 보내고 AI의 질문에 답할 수 있어요.</p>
       <a class="btn primary block" data-github-link href="#" target="_blank" rel="noopener">GitHub에서 열기 <span aria-hidden="true">↗</span></a>
 
@@ -41,6 +50,7 @@ const { repo } = Astro.props;
           <p class="err" data-token-err hidden></p>
         </form>
       </details>
+      </div>
     </section>
 
     <!-- 2. 작성 -->
@@ -59,7 +69,8 @@ const { repo } = Astro.props;
           </label>
           <ul class="file-list" data-file-list></ul>
           <p class="note" data-github-note>파일당 10MB까지. 저장소가 공개라면 첨부는 AI가 처리하는 동안 GitHub에서 볼 수 있어요(반영되면 지워져요).</p>
-          <p class="note" data-local-note hidden>데모 모드: 이 컴퓨터의 Claude Code가 처리하고, 검증을 통과하면 사이트 파일에 바로 반영해요.</p>
+          <p class="note" data-server-note hidden>파일당 10MB까지. AI가 처리하는 동안 추측할 수 없는 주소에 잠시 올려 두고, 끝나면 지워요.</p>
+          <p class="note" data-local-note hidden>데모 모드: 이 컴퓨터의 Claude Code가 처리하고, 검증을 통과하면 사이트 파일에 바로 반영해요(Firebase를 쓰면 Firestore에).</p>
         </div>
 
         <div class="row">
@@ -107,6 +118,7 @@ const { repo } = Astro.props;
     <footer class="foot" data-foot hidden>
       <button type="button" class="link" data-show-recent>최근 요청</button>
       <button type="button" class="link" data-clear-token>토큰 지우기</button>
+      <button type="button" class="link" data-sign-out hidden>로그아웃</button>
     </footer>
   </div>
 </dialog>
@@ -122,7 +134,10 @@ const { repo } = Astro.props;
     TOKEN_KEY,
     createClient,
     createLocalClient,
+    createServerClient,
     issueStatus,
+    SERVER_RECENT_KEY,
+    serverAgentReady,
     localAgentAlive,
     parseIssueUrl,
     readLocal,
@@ -132,6 +147,7 @@ const { repo } = Astro.props;
     type RecentRequest,
   } from '../lib/agent';
   import { issueUrl, type IssueOptions } from '../lib/issue';
+  import { currentUser, firebaseEnabled, idToken, signIn, signOut } from '../lib/firebaseClient';
 
   const dialog = document.querySelector<HTMLDialogElement>('[data-agent-dialog]')!;
   const repo = dialog.dataset.repo!;
@@ -154,21 +170,38 @@ const { repo } = Astro.props;
   let timer: number | undefined;
   let lastStatus: AgentStatus | null = null;
 
-  // 데모: 개발 모드(npm run dev)에서 로컬 AI 실행기(npm run agent:local)가 켜져 있으면 GitHub 대신 그쪽으로 보낸다
-  const localBase: string = import.meta.env.DEV ? import.meta.env.PUBLIC_LOCAL_AGENT || LOCAL_AGENT_URL : '';
-  let local = false;
-  async function detectLocal() {
-    if (localBase) local = await localAgentAlive(localBase);
-    $('[data-local-note]').hidden = !local;
-    $('[data-github-note]').hidden = local;
-    $('[data-clear-token]').hidden = local;
+  // 데모: 개발 모드(npm run dev)나 PUBLIC_LOCAL_AGENT를 넣고 빌드한 사이트에서 로컬 AI 실행기(npm run agent:local)가
+  // 켜져 있으면 그쪽으로 보낸다. 아니면 서버(Vercel 함수), 그것도 없으면 GitHub 이슈로 보낸다.
+  const localBase: string = import.meta.env.PUBLIC_LOCAL_AGENT || (import.meta.env.DEV ? LOCAL_AGENT_URL : '');
+  type Mode = 'local' | 'server' | 'github';
+  let mode: Mode = 'github';
+  let signedIn = false;
+  async function detect() {
+    if (localBase && (await localAgentAlive(localBase))) mode = 'local';
+    else if (firebaseEnabled && (await serverAgentReady(import.meta.env.BASE_URL))) mode = 'server';
+    else mode = 'github';
+    signedIn = mode === 'server' && !!(await currentUser().catch(() => null));
+    $('[data-local-note]').hidden = mode !== 'local';
+    $('[data-server-note]').hidden = mode !== 'server';
+    $('[data-github-note]').hidden = mode !== 'github';
+    $('[data-clear-token]').hidden = mode !== 'github';
+    $('[data-sign-out]').hidden = mode !== 'server';
+    $('[data-server-auth]').hidden = mode !== 'server';
+    $('[data-github-auth]').hidden = mode !== 'github';
+    dialog.querySelectorAll<HTMLElement>('[data-github-link]').forEach((a) => (a.hidden = mode !== 'github'));
   }
-  detectLocal();
+  const detectLocal = detect;
 
-  const token = () => (local ? 'local' : readLocal(TOKEN_KEY));
-  const client = (t: string) => (local ? createLocalClient(localBase) : createClient(repo, t));
-  const recentKey = () => (local ? LOCAL_RECENT_KEY : RECENT_KEY);
-  const requestUrl = (n: number) => (local ? `${localBase}/requests/${n}/comments` : `https://github.com/${repo}/issues/${n}`);
+  const token = () => (mode === 'local' ? 'local' : mode === 'server' ? (signedIn ? 'server' : null) : readLocal(TOKEN_KEY));
+  const client = (t: string) =>
+    mode === 'local'
+      ? createLocalClient(localBase)
+      : mode === 'server'
+        ? createServerClient(import.meta.env.BASE_URL, idToken)
+        : createClient(repo, t);
+  const recentKey = () => (mode === 'local' ? LOCAL_RECENT_KEY : mode === 'server' ? SERVER_RECENT_KEY : RECENT_KEY);
+  const requestUrl = (n: number) =>
+    mode === 'local' ? `${localBase}/requests/${n}/comments` : mode === 'server' ? '' : `https://github.com/${repo}/issues/${n}`;
 
   function show(view: View) {
     dialog.querySelectorAll<HTMLElement>('[data-view]').forEach((v) => (v.hidden = v.dataset.view !== view));
@@ -279,6 +312,31 @@ const { repo } = Astro.props;
     writeLocal(TOKEN_KEY, null);
     show('auth');
   }
+
+  // --- 주인 로그인 (서버 모드) ---
+  $('[data-google-login]').addEventListener('click', async () => {
+    const err = $('[data-login-err]');
+    err.hidden = true;
+    try {
+      await signIn();
+      signedIn = true;
+    } catch {
+      err.textContent = '로그인하지 못했어요. 팝업이 막혀 있는지 확인해 주세요.';
+      err.hidden = false;
+      return;
+    }
+    if (pending) {
+      fillCompose(pending);
+      show('compose');
+    } else {
+      showRecent();
+    }
+  });
+  $('[data-sign-out]').addEventListener('click', async () => {
+    await signOut().catch(() => {});
+    signedIn = false;
+    show('auth');
+  });
   $('[data-clear-token]').addEventListener('click', clearToken);
   $('[data-clear-token-inline]').addEventListener('click', clearToken);
 
@@ -316,7 +374,9 @@ const { repo } = Astro.props;
   function showError(e: unknown) {
     const status = e instanceof GitHubError ? e.status : 0;
     $('[data-error-text]').textContent = e instanceof Error ? e.message : '요청하지 못했어요.';
-    $('[data-clear-token-inline]').hidden = local || ![401, 403, 404].includes(status);
+    $('[data-clear-token-inline]').hidden = mode !== 'github' || ![401, 403, 404].includes(status);
+    // 서버 모드에서 401이면 주인이 아닌 계정이거나 로그인이 풀린 것
+    if (mode === 'server' && status === 401) signedIn = false;
     show('error');
   }
 
@@ -414,7 +474,8 @@ const { repo } = Astro.props;
     current = r;
     lastStatus = null;
     const link = $<HTMLAnchorElement>('[data-issue-link]');
-    link.href = r.url;
+    link.href = r.url || '#';
+    link.hidden = !r.url;
     link.textContent = `#${r.number} ${r.title} ↗`;
     $<HTMLAnchorElement>('[data-actions-link]').href = `https://github.com/${repo}/actions`;
     chat.replaceChildren();
@@ -462,7 +523,13 @@ const { repo } = Astro.props;
     result.hidden = status !== 'done' && status !== 'failed';
     if (status === 'done') {
       const pr = last.match(/PR #(\d+)/);
-      result.append(local ? '반영됐어요. 페이지를 새로고침하면 보여요.' : '반영됐어요. 사이트에는 배포가 끝나면 보여요.');
+      result.append(
+        mode === 'github'
+          ? '반영됐어요. 사이트에는 배포가 끝나면 보여요.'
+          : mode === 'server'
+            ? '반영됐어요. 사이트를 다시 빌드하는 중이라 1~2분 뒤에 보여요.'
+            : '반영됐어요. 페이지를 새로고침하면 보여요.',
+      );
       if (pr) {
         const a = document.createElement('a');
         a.href = `https://github.com/${repo}/pull/${pr[1]}`;

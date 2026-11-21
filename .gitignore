@@ -10,3 +10,5 @@ npm-debug.log*
 .idea/
 .local-agent/
 .archive-input/
+.vercel/
+.content-stamp
