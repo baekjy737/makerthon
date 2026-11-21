@@ -3,7 +3,6 @@ import { getCollection } from 'astro:content';
 import ResumeDocument from '../../components/ResumeDocument.astro';
 
 const entries = await getCollection('entries');
-entries.sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 ---
 
 <ResumeDocument entries={entries} />

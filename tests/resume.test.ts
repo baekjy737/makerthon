@@ -1,9 +1,10 @@
 import { expect, test } from 'vitest';
+import type { EntryLike } from '../src/lib/entries';
 import { tailoredEntries } from '../src/lib/resume';
 
-const entry = (id: string, isPublic = true) => ({
+const entry = (id: string, isPublic = true): EntryLike => ({
   id,
-  data: { public: isPublic, title: id.toUpperCase() },
+  data: { type: 'project', date: new Date('2026-01-01'), public: isPublic, featured: false },
 });
 
 test('맞춤 이력서는 비공개·없는 ID를 제외하고 점수순으로 정렬한다', () => {
