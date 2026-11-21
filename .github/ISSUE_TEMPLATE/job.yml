@@ -1,0 +1,19 @@
+name: 공고 분석하기
+description: 지원 공고의 요구 역량을 분석하고 관련 경험을 찾습니다.
+title: "[공고] "
+labels: [job]
+body:
+  - type: textarea
+    id: posting
+    attributes:
+      label: 공고 본문 또는 링크
+      description: 공고 본문을 붙여 넣거나 공고 주소를 적어 주세요. 자소서 문항이 있다면 함께 적어 주세요.
+    validations:
+      required: true
+  - type: input
+    id: position
+    attributes:
+      label: 지원 직무
+      description: 공고에서 지원하려는 직무명을 적어 주세요.
+    validations:
+      required: true

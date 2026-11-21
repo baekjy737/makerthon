@@ -1,0 +1,220 @@
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+const input = '.archive-input';
+const manifestPath = input + '/attachments.json';
+const slug = '[a-z0-9]+(?:-[a-z0-9]+)*';
+const entryPattern = new RegExp('^content/entries/(' + slug + '(?:/' + slug + ')*)\\.md$');
+const applicationPattern = new RegExp('^content/applications/' + slug + '/(?:index|essay-[1-9][0-9]*)\\.md$');
+const maxBytes = 25 * 1024 * 1024;
+
+function check(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+// Call with a validated repository-relative path, before reading or replacing it.
+function checkFile(path) {
+  let current = '';
+  for (const part of path.split('/')) {
+    check(part && part !== '.' && part !== '..', '잘못된 파일 경로입니다.');
+    current = current ? current + '/' + part : part;
+    const stat = lstatSync(current, { throwIfNoEntry: false });
+    if (stat) {
+      check(current === path ? stat.isFile() : stat.isDirectory(), '허용되지 않는 파일 또는 디렉터리입니다.');
+    }
+  }
+}
+
+function attachmentUrls(issue) {
+  const urls = new Set();
+  for (const text of [issue.title, issue.body, ...issue.comments.map(comment => comment.body)]) {
+    for (const [raw] of text.matchAll(/https:\/\/github\.com\/user-attachments\/[^\s<>"'`()[\]]+/gu)) {
+      const url = raw.replace(/[.,;!]+$/, '');
+      const path = new URL(url).pathname;
+      const asset = /^\/user-attachments\/assets\/[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(path);
+      const file = /^\/user-attachments\/files\/\d+\/[^/]+$/u.test(path) && !/%(?:2f|5c)/i.test(path);
+      if ((asset || file) && !/[?#\\]/u.test(url)) urls.add(url);
+    }
+  }
+  return urls;
+}
+
+function extension(bytes) {
+  const header = bytes.toString('latin1', 0, 12);
+  if (header.startsWith('\x89PNG\r\n\x1a\n')) return 'png';
+  if (header.startsWith('\xff\xd8\xff')) return 'jpg';
+  if (header.startsWith('GIF87a') || header.startsWith('GIF89a')) return 'gif';
+  if (header.startsWith('RIFF') && header.slice(8) === 'WEBP') return 'webp';
+  if (header.startsWith('%PDF-')) return 'pdf';
+  throw new Error('지원하는 이미지 또는 PDF 형식을 확인할 수 없습니다.');
+}
+
+function filename(bytes) {
+  return createHash('sha256').update(bytes).digest('hex') + '.' + extension(bytes);
+}
+
+function isStorageUrl(url) {
+  const host = url.hostname;
+  return url.protocol === 'https:' && !url.username && !url.password && !url.port
+    && (host === 'github.com' || host.endsWith('.githubusercontent.com')
+      || host.endsWith('.blob.core.windows.net') || /^github-[a-z0-9-]+\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(host));
+}
+
+async function download(source) {
+  let url = new URL(source);
+  const signal = AbortSignal.timeout(60000);
+  for (let hop = 0; hop <= 5; hop++) {
+    const headers = {};
+    if (hop === 0 && url.origin === 'https://github.com' && process.env.GH_TOKEN) {
+      headers.Authorization = 'Bearer ' + process.env.GH_TOKEN;
+    }
+    const response = await fetch(url, { headers, redirect: 'manual', signal });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      await response.body?.cancel();
+      const location = response.headers.get('location');
+      check(location, '첨부 리디렉션 주소가 없습니다.');
+      url = new URL(location, url);
+      check(isStorageUrl(url), '지원하지 않는 첨부 저장소입니다.');
+      continue;
+    }
+    check(response.ok && response.body, 'GitHub 첨부를 읽을 수 없습니다.');
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      check(size <= maxBytes, '첨부가 GitHub 문서 파일 크기 제한을 초과합니다.');
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks, size);
+  }
+  throw new Error('첨부 리디렉션이 너무 많습니다.');
+}
+
+function signedImageUrl(original, signedImages) {
+  const asset = new URL(original).pathname.match(/^\/user-attachments\/assets\/([^/]+)$/i);
+  const candidate = asset && signedImages[asset[1].toLowerCase()];
+  if (!candidate || !URL.canParse(candidate)) return null;
+  const url = new URL(candidate);
+  if (url.origin !== 'https://private-user-images.githubusercontent.com' || url.username || url.password
+    || url.pathname === '/' || !url.search) return null;
+  return url;
+}
+
+async function prepare() {
+  checkFile(input + '/issue.json');
+  checkFile(manifestPath);
+  const issue = readJson(input + '/issue.json');
+  const signedImages = process.env.AI_SIGNED_IMAGES_FILE ? readJson(process.env.AI_SIGNED_IMAGES_FILE) : {};
+  const manifest = [];
+  for (const url of attachmentUrls(issue)) {
+    let name = null;
+    for (const source of [url, signedImageUrl(url, signedImages)].filter(Boolean)) {
+      let bytes;
+      try {
+        bytes = await download(source);
+        name = filename(bytes);
+      } catch {
+        continue;
+      }
+      const path = join(input, name);
+      checkFile(path);
+      writeFileSync(path, bytes);
+      break;
+    }
+    manifest.push({ name, url });
+  }
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+}
+
+function frontmatter(markdown, parse) {
+  const block = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(markdown);
+  check(block, '콘텐츠 파일의 frontmatter가 없습니다.');
+  const data = parse(block[1]);
+  check(data && typeof data === 'object' && !Array.isArray(data), '잘못된 frontmatter입니다.');
+  return { data, body: markdown.slice(block[0].length) };
+}
+
+function checkUrl(value) {
+  const url = new URL(value, 'https://archive.invalid/');
+  check(['https:', 'http:', 'mailto:', 'tel:'].includes(url.protocol), '허용되지 않는 링크 형식입니다.');
+}
+
+function checkMarkdown(node) {
+  check(node.type !== 'html', '본문에는 HTML 태그 대신 Markdown을 사용해 주세요.');
+  if (node.url !== undefined) checkUrl(node.url);
+  for (const child of node.children ?? []) checkMarkdown(child);
+}
+
+async function apply() {
+  const result = readJson(process.env.AI_RESULT_FILE);
+  check(['ready', 'question', 'unchanged'].includes(result.status) && typeof result.message === 'string', '잘못된 처리 결과입니다.');
+  if (result.status !== 'ready') return;
+  check(Array.isArray(result.files) && Array.isArray(result.attachments), '변경 파일 또는 첨부 목록이 없습니다.');
+  checkFile(manifestPath);
+  const available = new Set(readJson(manifestPath).map(item => item.name).filter(Boolean));
+  const { parse } = await import('yaml');
+  // Use the same Markdown parser as the Astro 7 build.
+  const { markdownToMdast } = await import('satteri');
+  const changes = new Map();
+  const entries = new Map();
+
+  for (const { path, markdown } of result.files) {
+    check(typeof path === 'string' && typeof markdown === 'string' && markdown.trim(), '잘못된 Markdown 변경입니다.');
+    const entry = entryPattern.exec(path);
+    check(entry || applicationPattern.test(path), '콘텐츠 범위 밖의 파일 경로입니다.');
+    checkFile(path);
+    check(!changes.has(path), '중복된 변경 경로입니다.');
+    const { data, body } = frontmatter(markdown, parse);
+    checkMarkdown(markdownToMdast(body));
+    if (data.url !== undefined) checkUrl(data.url);
+    for (const link of data.links ?? []) checkUrl(link.url);
+    if (entry) {
+      const old = existsSync(path) ? frontmatter(readFileSync(path, 'utf8'), parse).data : null;
+      check(old || !entry[1].includes('/'), '새 활동은 entries 바로 아래에 작성해야 합니다.');
+      check(data.public === undefined || typeof data.public === 'boolean', '잘못된 공개 설정입니다.');
+      check(data.attachments === undefined || Array.isArray(data.attachments)
+        && data.attachments.every(path => typeof path === 'string'), '잘못된 첨부 목록입니다.');
+      check(!old || (old.public ?? true) === (data.public ?? true), '기존 항목의 공개 설정을 바꿀 수 없습니다.');
+      entries.set(entry[1], { data, verifiedAttachments: new Set(old?.attachments ?? []) });
+    } else if (/\/essay-\d+\.md$/.test(path) && data.limit !== undefined) {
+      check(Number.isSafeInteger(data.limit) && data.limit > 0, '자소서 글자 수 제한은 양의 정수여야 합니다.');
+      const draft = body.replace(/\r\n/g, '\n').replace(/^\n+|\n+$/g, '');
+      const count = Array.from(draft).length;
+      check(count >= Math.ceil(data.limit * 0.9) && count <= data.limit, '자소서 본문이 글자 수 제한의 90~100% 범위를 벗어났습니다.');
+    }
+    changes.set(path, markdown);
+  }
+
+  for (const { name, entry } of result.attachments) {
+    check(typeof name === 'string' && /^[a-f0-9]{64}\.(?:png|jpg|gif|webp|pdf)$/.test(name) && available.has(name), '준비된 첨부가 아닙니다.');
+    const record = entries.get(entry);
+    const relative = 'archive/' + entry + '/' + name;
+    check(record && record.data.public !== false && record.data.attachments?.includes(relative), '공개 항목이 첨부를 참조해야 합니다.');
+    const source = join(input, name);
+    const target = 'public/' + relative;
+    checkFile(source);
+    checkFile(target);
+    const bytes = readFileSync(source);
+    check(filename(bytes) === name, '첨부 파일 내용이 바뀌었습니다.');
+    changes.set(target, bytes);
+    record.verifiedAttachments.add(relative);
+  }
+  for (const { data, verifiedAttachments } of entries.values()) {
+    for (const path of data.attachments ?? []) {
+      check(verifiedAttachments.has(path), '원본을 확인할 수 없는 첨부 경로입니다.');
+    }
+  }
+  for (const [path, bytes] of changes) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, bytes);
+  }
+}
+
+if (process.argv[2] === 'prepare') await prepare();
+else if (process.argv[2] === 'apply') await apply();
+else throw new Error('prepare 또는 apply를 지정하세요.');
