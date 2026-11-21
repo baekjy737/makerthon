@@ -8,7 +8,8 @@ import DetailPanel from '../components/DetailPanel.astro';
 import { publicOnly, sortByDate } from '../lib/entries';
 import { loadProfile } from '../lib/profile';
 import { archiveStats } from '../lib/stats';
-import { TYPE_LABELS } from '../lib/types';
+import { groupByTopic, section } from '../lib/study';
+import { STUDY_TYPES, TYPE_LABELS } from '../lib/types';
 import { withBase } from '../lib/url';
 
 const GRADUATION_URL = 'https://my.dgist.ac.kr/com/portal/index.do';
@@ -22,10 +23,25 @@ const last = pub[0]?.data.date;
 const ym = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 const period = (start: Date, end?: Date) => (end && ym(end) !== ym(start) ? `${ym(start)} – ${ym(end)}` : ym(start));
 
-// TODO(Task 10 병합 후): STUDY_TYPES·groupByTopic·section으로 공부 기록 탭을 채운다
-const study: { topic: string; items: StudyItem[] }[] = [];
+type Entry = CollectionEntry<'entries'>;
+const isStudy = (e: Entry) => (STUDY_TYPES as readonly string[]).includes(e.data.type);
 
-const activities: ActivityItem[] = pub.map((e: CollectionEntry<'entries'>) => ({
+// 공부 기록: 주제별로 묶고, 패널에는 본문의 배운 점·남은 질문
+const study: { topic: string; items: StudyItem[] }[] = groupByTopic(pub.filter(isStudy)).map((g) => ({
+  topic: g.topic,
+  items: g.items.map((e) => ({
+    id: e.id,
+    title: e.data.title,
+    label: TYPE_LABELS[e.data.type],
+    period: period(e.data.date, e.data.end),
+    summary: e.data.summary,
+    learned: section(e.body ?? '', '배운 점'),
+    questions: section(e.body ?? '', '남은 질문'),
+  })),
+}));
+
+// 활동: 공부 기록이 아닌 공개 항목, 최신순
+const activities: ActivityItem[] = pub.filter((e) => !isStudy(e)).map((e) => ({
   id: e.id,
   title: e.data.title,
   label: TYPE_LABELS[e.data.type],

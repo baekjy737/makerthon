@@ -2,7 +2,7 @@
 // 오른쪽 상세 패널. 페이지에 하나만 둔다.
 // 열기: [data-detail-open][data-detail-id="<id>"] 버튼을 누르면
 //       <template data-detail="<id>" data-title="제목" data-kicker="종류·기간"> 내용을 복제해 채운다.
-// 템플릿 안에서는 .detail-block / .detail-label / .detail-text / .detail-empty / .detail-meta / .detail-link 를 쓸 수 있다.
+// 템플릿 안에서는 .detail-block / .detail-label / .detail-text / .detail-list / .detail-empty / .detail-meta / .detail-link 를 쓸 수 있다.
 // 스크림 없음: 패널이 열려 있어도 목록은 계속 조작할 수 있다(MemoPanel과 같은 평행 패널).
 ---
 
@@ -219,6 +219,28 @@
   .detail-body :global(.detail-text) {
     white-space: pre-line;
     line-height: 1.75;
+  }
+  .detail-body :global(.detail-list) {
+    display: grid;
+    gap: 0.625rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    line-height: 1.7;
+  }
+  .detail-body :global(.detail-list li) {
+    position: relative;
+    padding-left: 1rem;
+  }
+  .detail-body :global(.detail-list li)::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.75em;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .detail-body :global(.detail-empty) {
     color: var(--muted);

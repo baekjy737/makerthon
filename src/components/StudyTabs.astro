@@ -35,6 +35,12 @@ const hasStudy = study.some((g) => g.items.length > 0);
 const initial: 'study' | 'activity' = hasStudy ? 'study' : 'activity';
 const EMPTY = '아직 적지 않았어요';
 
+// 본문 섹션: 모든 줄이 `- `/`* ` 목록이면 목록으로, 아니면 줄바꿈을 살린 문단으로
+const asList = (text: string): string[] | null => {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every((l) => /^[-*]\s+/.test(l)) ? lines.map((l) => l.replace(/^[-*]\s+/, '')) : null;
+};
+
 const tabs = [
   { key: 'study', label: '공부 기록', count: study.reduce((n, g) => n + g.items.length, 0) },
   { key: 'activity', label: '활동·포트폴리오', count: activities.length },
@@ -134,14 +140,28 @@ const tabs = [
     study.flatMap((g) =>
       g.items.map((it) => (
         <template data-detail={it.id} data-title={it.title} data-kicker={`${it.label} · ${it.period}`}>
-          <section class="detail-block">
-            <h3 class="detail-label">배운 점</h3>
-            {it.learned ? <p class="detail-text">{it.learned}</p> : <p class="detail-empty">{EMPTY}</p>}
-          </section>
-          <section class="detail-block">
-            <h3 class="detail-label">남은 질문</h3>
-            {it.questions ? <p class="detail-text">{it.questions}</p> : <p class="detail-empty">{EMPTY}</p>}
-          </section>
+          {[
+            ['배운 점', it.learned],
+            ['남은 질문', it.questions],
+          ].map(([label, text]) => {
+            const list = asList(text);
+            return (
+              <section class="detail-block">
+                <h3 class="detail-label">{label}</h3>
+                {!text ? (
+                  <p class="detail-empty">{EMPTY}</p>
+                ) : list ? (
+                  <ul class="detail-list">
+                    {list.map((l) => (
+                      <li>{l}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p class="detail-text">{text}</p>
+                )}
+              </section>
+            );
+          })}
         </template>
       )),
     )
