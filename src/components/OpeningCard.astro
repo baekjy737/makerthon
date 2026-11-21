@@ -1,0 +1,247 @@
+---
+// APPLY 모집 공고 카드 하나.
+// 상태·D-n은 빌드 시점 값으로 그리고, 페이지의 스크립트가 방문한 날 기준으로 다시 계산한다(data-* 사용).
+// 카드마다 id="opening-<공고 id>" 앵커가 있다(RECOMMEND 연구실 카드가 /apply/#opening-<id>로 링크한다).
+import { daysLeft, ddayLabel, type BoardItem } from '../lib/board';
+import { OPENING_STATUS_LABELS } from '../lib/openings';
+
+interface Props {
+  item: BoardItem;
+  now: Date;
+}
+
+const { item, now } = Astro.props;
+const { opening: o, status } = item;
+const day = (d?: Date) => d?.toISOString().slice(0, 10);
+const deadline = day(o.deadline);
+const dday = o.deadline ? ddayLabel(daysLeft(o.deadline, now)) : null;
+const tags = o.tags.slice(0, 3);
+---
+
+<article
+  class="card"
+  id={`opening-${o.id}`}
+  data-opening
+  data-status={status}
+  data-verified={o.verified ? '1' : '0'}
+  data-has-url={o.url ? '1' : '0'}
+  data-start={day(o.start)}
+  data-deadline={deadline}
+>
+  <header class="card-head">
+    <p class="org">{o.org}</p>
+    <span class="badge" data-badge>{OPENING_STATUS_LABELS[status]}</span>
+  </header>
+
+  <h3 class="title">{o.title}</h3>
+
+  <dl class="facts">
+    {
+      o.target && (
+        <div>
+          <dt>모집 대상</dt>
+          <dd>{o.target}</dd>
+        </div>
+      )
+    }
+    {
+      o.eligibility && (
+        <div>
+          <dt>자격 요건</dt>
+          <dd class="clamp" title={o.eligibility}>
+            {o.eligibility}
+          </dd>
+        </div>
+      )
+    }
+    <div>
+      <dt>마감</dt>
+      <dd>
+        {
+          deadline ? (
+            <>
+              <time datetime={deadline}>{deadline}</time>
+              <span class="dday" data-dday hidden={!dday}>
+                {dday}
+              </span>
+            </>
+          ) : (
+            <span class="muted">마감일 미정</span>
+          )
+        }
+      </dd>
+    </div>
+  </dl>
+
+  {
+    tags.length > 0 && (
+      <ul class="tags" aria-label="태그">
+        {tags.map((t) => (
+          <li>{t}</li>
+        ))}
+      </ul>
+    )
+  }
+
+  {
+    o.url ? (
+      <a class="source" href={o.url} target="_blank" rel="noopener">
+        원본 공고<span class="visually-hidden"> (새 탭)</span>
+        <span aria-hidden="true">↗</span>
+      </a>
+    ) : (
+      <p class="source none">원본 링크 없음</p>
+    )
+  }
+</article>
+
+<style>
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 1.25rem 1.375rem 1.125rem;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 9%, transparent);
+    scroll-margin-top: 6rem;
+    transition: box-shadow 200ms ease-out;
+  }
+  .card[hidden] {
+    display: none;
+  }
+  /* 주소의 #opening-<id>로 들어왔을 때 잠깐 강조 */
+  .card:target,
+  .card.is-target {
+    box-shadow:
+      inset 0 0 0 1px var(--accent),
+      0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+
+  .card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .org {
+    min-width: 0;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+
+  /* 상태 배지: 모집 중만 포인트색, 확인 필요는 테두리, 마감은 흐리게 */
+  .badge {
+    flex: none;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+  [data-status='open'] .badge {
+    background: var(--accent);
+    color: #fff;
+  }
+  [data-status='unverified'] .badge {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 35%, transparent);
+    color: var(--fg);
+  }
+  [data-status='closed'] .badge {
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+    color: var(--muted);
+  }
+  [data-status='closed'] .title {
+    color: var(--muted);
+  }
+
+  .title {
+    font-size: 1.0625rem;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+  }
+
+  .facts {
+    display: grid;
+    gap: 0.375rem;
+    margin: 0;
+    font-size: 0.875rem;
+  }
+  .facts > div {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+  .facts dt {
+    color: var(--muted);
+  }
+  .facts dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+  }
+  .muted {
+    color: var(--muted);
+  }
+
+  .dday {
+    margin-left: 0.5rem;
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .tags li {
+    padding: 0.125rem 0.5rem;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--fg) 7%, transparent);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .source {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    min-height: 44px;
+    margin-top: auto;
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    font-size: 0.875rem;
+    color: var(--accent);
+  }
+  .source:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .source.none {
+    font-family: inherit;
+    font-weight: 400;
+    color: var(--muted);
+  }
+
+  @media (prefers-contrast: more) {
+    .card {
+      box-shadow: inset 0 0 0 1px var(--fg);
+    }
+  }
+</style>
