@@ -1,5 +1,5 @@
 ---
-import { getCollection } from 'astro:content';
+import { getCollection, render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import MemoPanel from '../../components/MemoPanel.astro';
 import { loadProfile } from '../../lib/profile';
@@ -37,6 +37,9 @@ function filesOf(e: Entry): MemoFile[] {
     ...e.data.links.map((l): MemoFile => ({ ref: l.url, label: l.label, kind: 'link', href: l.url })),
   ];
 }
+
+// 전체 화면 메모 패널의 "항목 본문" 미리보기용
+const previews = await Promise.all(entries.map(async (e) => ({ e, Content: (await render(e)).Content })));
 
 const ym = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 const period = (start: Date, end?: Date) => (end ? `${ym(start)} – ${ym(end)}` : ym(start));
@@ -141,6 +144,22 @@ const actions = [
       )
     }
   </div>
+
+  {
+    previews.map(({ e, Content }) => (
+      <template data-entry-preview={e.id}>
+        <h1>{e.data.title}</h1>
+        <p class="pv-meta">
+          {TYPE_LABELS[e.data.type]} · {period(e.data.date, e.data.end)}
+          {e.data.org && <> · {e.data.org}</>}
+          {e.data.role && <> · {e.data.role}</>}
+          {!e.data.public && <> · 비공개</>}
+        </p>
+        <p class="pv-summary">{e.data.summary}</p>
+        <Content />
+      </template>
+    ))
+  }
 
   <MemoPanel repo={profile.repo} />
 </Base>
