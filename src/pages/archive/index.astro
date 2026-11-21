@@ -1,0 +1,188 @@
+---
+import { getCollection } from 'astro:content';
+import EntryCard from '../../components/EntryCard.astro';
+import TypeFilter from '../../components/TypeFilter.astro';
+import Base from '../../layouts/Base.astro';
+import { publicOnly, sortByDate } from '../../lib/entries';
+import { ENTRY_TYPES } from '../../lib/types';
+import { withBase } from '../../lib/url';
+
+const entries = sortByDate(publicOnly(await getCollection('entries')));
+const availableTypes = ENTRY_TYPES.filter((type) => entries.some((entry) => entry.data.type === type));
+const byYear = entries.reduce((groups, entry) => {
+  const year = entry.data.date.getFullYear();
+  const group = groups.get(year) ?? [];
+  group.push(entry);
+  groups.set(year, group);
+  return groups;
+}, new Map<number, typeof entries>());
+const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
+---
+
+<Base title="아카이브" description="활동과 성장을 시간순으로 모은 공개 기록입니다.">
+  <div class="archive container" data-filter-scope>
+    <header class="page-header">
+      <p class="eyebrow">ARCHIVE · {entries.length.toString().padStart(2, '0')}</p>
+      <h1>기록은 쌓이고,<br /><span>방향이 됩니다.</span></h1>
+      <p class="lede">프로젝트부터 연구, 수상, 활동까지 공개한 기록을 시간순으로 모았습니다.</p>
+    </header>
+
+    <TypeFilter types={availableTypes} />
+
+    {
+      yearGroups.length > 0 ? (
+        <div class="timeline">
+          {yearGroups.map(({ year, items }) => (
+            <section class="year" aria-labelledby={`year-${year}`}>
+              <div class="year__label">
+                <h2 id={`year-${year}`}>{year}</h2>
+                <span>{items.length.toString().padStart(2, '0')}</span>
+              </div>
+              <div class="year__entries">
+                {items.map((entry) => (
+                  <EntryCard entry={entry} href={withBase(`/portfolio/${entry.id}/`)} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <p class="empty">아직 공개된 기록이 없습니다.</p>
+      )
+    }
+  </div>
+</Base>
+
+<style>
+  .archive {
+    padding-block: clamp(4rem, 9vw, 8rem) 8rem;
+  }
+
+  .page-header {
+    max-width: 56rem;
+  }
+
+  .eyebrow {
+    margin-bottom: 1.25rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(3.4rem, 9vw, 8rem);
+    font-weight: 400;
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    text-transform: uppercase;
+  }
+
+  h1 span {
+    color: var(--muted);
+  }
+
+  .lede {
+    max-width: 38rem;
+    margin-top: 2rem;
+    color: var(--muted);
+    font-size: clamp(1rem, 2vw, 1.15rem);
+  }
+
+  .timeline {
+    position: relative;
+  }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: clamp(4.6rem, 10vw, 8.5rem);
+    width: 1px;
+    background: linear-gradient(var(--accent), color-mix(in srgb, var(--muted) 24%, transparent) 18%, transparent);
+  }
+
+  .year {
+    display: grid;
+    grid-template-columns: clamp(5.5rem, 12vw, 10rem) minmax(0, 1fr);
+    gap: clamp(1.5rem, 4vw, 4rem);
+    padding-bottom: clamp(4rem, 8vw, 7rem);
+  }
+
+  .year__label {
+    position: sticky;
+    top: 5.5rem;
+    align-self: start;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-right: clamp(0.8rem, 2vw, 1.6rem);
+  }
+
+  .year__label::after {
+    content: '';
+    position: absolute;
+    top: 0.66rem;
+    right: -0.31rem;
+    width: 0.65rem;
+    aspect-ratio: 1;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    background: var(--bg);
+  }
+
+  .year__label h2 {
+    font-family: var(--font-mono);
+    font-size: clamp(0.95rem, 2vw, 1.2rem);
+    letter-spacing: 0.03em;
+  }
+
+  .year__label span {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+  }
+
+  .year__entries {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .empty {
+    padding: 4rem 0;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+    color: var(--muted);
+  }
+
+  @media (max-width: 800px) {
+    .timeline::before {
+      left: 0.3rem;
+    }
+
+    .year {
+      display: block;
+      padding-left: 1.75rem;
+    }
+
+    .year__label {
+      position: relative;
+      top: auto;
+      justify-content: flex-start;
+      margin-bottom: 1rem;
+      padding: 0;
+    }
+
+    .year__label::after {
+      left: -1.75rem;
+      right: auto;
+    }
+
+    .year__entries {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

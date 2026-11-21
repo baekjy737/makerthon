@@ -1,0 +1,133 @@
+---
+import { ENTRY_TYPES, TYPE_LABELS, type EntryType } from '../lib/types';
+
+interface Props {
+  types?: EntryType[];
+}
+
+const { types = [...ENTRY_TYPES] } = Astro.props;
+const availableTypes = ENTRY_TYPES.filter((type) => types.includes(type));
+---
+
+<div class="type-filter" data-type-filter aria-label="항목 종류 필터">
+  <div class="type-filter__buttons">
+    <button type="button" data-filter="all" aria-pressed="true">전체</button>
+    {
+      availableTypes.map((type) => (
+        <button type="button" data-filter={type} aria-pressed="false">
+          {TYPE_LABELS[type]}
+        </button>
+      ))
+    }
+  </div>
+  <span class="type-filter__status" data-filter-status aria-live="polite"></span>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-type-filter]').forEach((filter) => {
+    if (filter.dataset.ready === 'true') return;
+    filter.dataset.ready = 'true';
+
+    const scope = filter.closest<HTMLElement>('[data-filter-scope]') ?? document;
+    const cards = Array.from(scope.querySelectorAll<HTMLElement>('[data-type]'));
+    const buttons = Array.from(filter.querySelectorAll<HTMLButtonElement>('[data-filter]'));
+    const status = filter.querySelector<HTMLElement>('[data-filter-status]');
+
+    const applyFilter = (selected: string) => {
+      let visible = 0;
+
+      cards.forEach((card) => {
+        const show = selected === 'all' || card.dataset.type === selected;
+        card.hidden = !show;
+        if (show) visible += 1;
+      });
+
+      buttons.forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.filter === selected));
+      });
+
+      if (status) status.textContent = `${visible}개 항목`;
+    };
+
+    buttons.forEach((button) => {
+      button.addEventListener('click', () => applyFilter(button.dataset.filter ?? 'all'));
+    });
+
+    applyFilter('all');
+  });
+</script>
+
+<style>
+  .type-filter {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-block: 2rem clamp(2rem, 6vw, 4rem);
+  }
+
+  .type-filter__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  button {
+    min-height: 2.5rem;
+    padding: 0.55rem 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--muted) 34%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    color: var(--muted);
+    font-family: var(--font-ko-bold);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      color 160ms ease-out,
+      border-color 160ms ease-out,
+      background-color 160ms ease-out,
+      transform 100ms ease-out;
+  }
+
+  button:hover {
+    color: var(--fg);
+    border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+  }
+
+  button:active {
+    transform: scale(0.96);
+  }
+
+  button[aria-pressed='true'] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .type-filter__status {
+    flex: none;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+  }
+
+  @media (max-width: 640px) {
+    .type-filter {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    button {
+      transition: none;
+    }
+
+    button:active {
+      transform: none;
+    }
+  }
+</style>
