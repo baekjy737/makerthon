@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+.local-agent/
+.archive-input/
+.content-stamp
+dist/
