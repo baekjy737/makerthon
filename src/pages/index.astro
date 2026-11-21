@@ -5,6 +5,7 @@ import Hero from '../components/Hero.astro';
 import StatStrip from '../components/StatStrip.astro';
 import StudyTabs, { type ActivityItem, type StudyItem } from '../components/StudyTabs.astro';
 import DetailPanel from '../components/DetailPanel.astro';
+import RecommendPreview from '../components/RecommendPreview.astro';
 import { publicOnly, sortByDate } from '../lib/entries';
 import { loadProfile } from '../lib/profile';
 import { archiveStats } from '../lib/stats';
@@ -72,6 +73,7 @@ const activities: ActivityItem[] = pub.filter((e) => !isStudy(e)).map((e) => ({
   </nav>
 
   <StudyTabs study={study} activities={activities} />
+  <RecommendPreview />
   <DetailPanel />
 </Base>
 
