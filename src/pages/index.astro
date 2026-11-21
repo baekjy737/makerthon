@@ -1,20 +1,128 @@
 ---
-import { getCollection } from 'astro:content';
+import { getCollection, type CollectionEntry } from 'astro:content';
 import Base from '../layouts/Base.astro';
 import Hero from '../components/Hero.astro';
 import StatStrip from '../components/StatStrip.astro';
+import StudyTabs, { type ActivityItem, type StudyItem } from '../components/StudyTabs.astro';
+import DetailPanel from '../components/DetailPanel.astro';
 import { publicOnly, sortByDate } from '../lib/entries';
 import { loadProfile } from '../lib/profile';
 import { archiveStats } from '../lib/stats';
+import { TYPE_LABELS } from '../lib/types';
+import { withBase } from '../lib/url';
+
+const GRADUATION_URL = 'https://my.dgist.ac.kr/com/portal/index.do';
 
 const profile = loadProfile();
 const entries = await getCollection('entries');
 const stats = archiveStats(entries, new Date());
-const last = sortByDate(publicOnly(entries))[0]?.data.date;
+const pub = sortByDate(publicOnly(entries));
+const last = pub[0]?.data.date;
+
+const ym = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+const period = (start: Date, end?: Date) => (end && ym(end) !== ym(start) ? `${ym(start)} – ${ym(end)}` : ym(start));
+
+// TODO(Task 10 병합 후): STUDY_TYPES·groupByTopic·section으로 공부 기록 탭을 채운다
+const study: { topic: string; items: StudyItem[] }[] = [];
+
+const activities: ActivityItem[] = pub.map((e: CollectionEntry<'entries'>) => ({
+  id: e.id,
+  title: e.data.title,
+  label: TYPE_LABELS[e.data.type],
+  period: period(e.data.date, e.data.end),
+  summary: e.data.summary,
+  role: e.data.role,
+  org: e.data.org,
+  href: e.data.featured ? withBase(`/portfolio/${e.id}/`) : undefined,
+}));
 ---
 
 <Base>
   <Hero profile={profile}>
     <StatStrip stats={stats} last={last} />
   </Hero>
+
+  <nav class="profile-row" aria-label="바로가기">
+    <a class="shortcut" href={withBase('resume/')}>
+      <span class="shortcut-title">CV 열기</span>
+      <span class="shortcut-sub">웹 이력서 · PDF로 저장</span>
+      <span class="shortcut-arrow" aria-hidden="true">→</span>
+    </a>
+    <a class="shortcut" href={GRADUATION_URL} target="_blank" rel="noopener">
+      <span class="shortcut-title">졸업학점 확인<span class="visually-hidden"> (새 탭)</span></span>
+      <span class="shortcut-sub">포털 퀵메뉴 → 졸업시뮬레이션</span>
+      <span class="shortcut-arrow" aria-hidden="true">↗</span>
+    </a>
+  </nav>
+
+  <StudyTabs study={study} activities={activities} />
+  <DetailPanel />
 </Base>
+
+<style>
+  /* 히어로 바로 아래 바로가기 줄 */
+  .profile-row {
+    width: var(--content);
+    margin-inline: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .shortcut {
+    position: relative;
+    display: grid;
+    gap: 0.25rem;
+    padding: 1.25rem 3rem 1.25rem 1.375rem;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 8%, transparent);
+    transition:
+      background-color 150ms ease-out,
+      transform 100ms ease-out;
+  }
+  .shortcut:hover {
+    background: color-mix(in srgb, var(--fg) 9%, transparent);
+  }
+  .shortcut:active {
+    transform: scale(0.98);
+  }
+
+  .shortcut-title {
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    font-size: 1.0625rem;
+  }
+
+  .shortcut-sub {
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+
+  .shortcut-arrow {
+    position: absolute;
+    top: 50%;
+    right: 1.375rem;
+    translate: 0 -50%;
+    color: var(--accent);
+    font-size: 1.125rem;
+  }
+
+  @media (max-width: 560px) {
+    .profile-row {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shortcut:active {
+      transform: none;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .shortcut {
+      box-shadow: inset 0 0 0 1px var(--fg);
+    }
+  }
+</style>

@@ -1,0 +1,403 @@
+---
+// 메인 탭 [공부 기록 | 활동·포트폴리오]. 항목을 누르면 오른쪽 DetailPanel이 열린다.
+// 데이터는 index.astro가 계산해서 넘긴다(공개 항목만). 각 항목의 상세는 <template data-detail>로 같이 렌더한다.
+
+export interface TabItem {
+  id: string;
+  title: string;
+  /** 종류 라벨 (예: 읽은 논문, 프로젝트) */
+  label: string;
+  /** 2026.03 또는 2025.07 – 2025.08 */
+  period: string;
+  /** 목록 한 줄 */
+  summary: string;
+}
+
+export interface StudyItem extends TabItem {
+  learned: string;
+  questions: string;
+}
+
+export interface ActivityItem extends TabItem {
+  role?: string;
+  org?: string;
+  /** featured면 포트폴리오 상세 주소 */
+  href?: string;
+}
+
+interface Props {
+  study: { topic: string; items: StudyItem[] }[];
+  activities: ActivityItem[];
+}
+
+const { study, activities } = Astro.props;
+const hasStudy = study.some((g) => g.items.length > 0);
+const initial: 'study' | 'activity' = hasStudy ? 'study' : 'activity';
+const EMPTY = '아직 적지 않았어요';
+
+const tabs = [
+  { key: 'study', label: '공부 기록', count: study.reduce((n, g) => n + g.items.length, 0) },
+  { key: 'activity', label: '활동·포트폴리오', count: activities.length },
+] as const;
+---
+
+<section class="records" aria-labelledby="records-title">
+  <div class="records-head">
+    <h2 id="records-title" class="visually-hidden">기록</h2>
+    <div class="tablist" role="tablist" aria-label="기록 종류" data-tablist>
+      <span class="tab-pill" aria-hidden="true" data-tab-pill></span>
+      {
+        tabs.map((t) => (
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id={`tab-${t.key}`}
+            aria-controls={`tabpanel-${t.key}`}
+            aria-selected={t.key === initial ? 'true' : 'false'}
+            tabindex={t.key === initial ? 0 : -1}
+            data-tab={t.key}
+          >
+            {t.label}
+            <span class="tab-count">{t.count}</span>
+          </button>
+        ))
+      }
+    </div>
+  </div>
+
+  <div class="tabpanel" role="tabpanel" id="tabpanel-study" aria-labelledby="tab-study" hidden={initial !== 'study'}>
+    {
+      hasStudy ? (
+        study.map((g) => (
+          <div class="group">
+            <h3 class="group-title">{g.topic}</h3>
+            <ul class="list">
+              {g.items.map((it) => (
+                <li>
+                  <button
+                    type="button"
+                    class="row"
+                    data-detail-open
+                    data-detail-id={it.id}
+                    aria-controls="detail-panel"
+                    aria-expanded="false"
+                  >
+                    <span class="row-kicker">
+                      {it.label} · {it.period}
+                    </span>
+                    <span class="row-title">{it.title}</span>
+                    {it.summary && <span class="row-summary">{it.summary}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      ) : (
+        <p class="empty">아직 공부 기록이 없어요. 수업·논문·공부자료를 이슈로 남기면 여기에 주제별로 모여요.</p>
+      )
+    }
+  </div>
+
+  <div class="tabpanel" role="tabpanel" id="tabpanel-activity" aria-labelledby="tab-activity" hidden={initial !== 'activity'}>
+    {
+      activities.length > 0 ? (
+        <ul class="list">
+          {activities.map((it) => (
+            <li>
+              <button
+                type="button"
+                class="row"
+                data-detail-open
+                data-detail-id={it.id}
+                aria-controls="detail-panel"
+                aria-expanded="false"
+              >
+                <span class="row-kicker">
+                  {it.label} · {it.period}
+                </span>
+                <span class="row-title">{it.title}</span>
+                {it.role && <span class="row-summary">{it.role}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="empty">아직 공개한 활동이 없어요.</p>
+      )
+    }
+  </div>
+
+  {/* 상세 패널 내용 */}
+  {
+    study.flatMap((g) =>
+      g.items.map((it) => (
+        <template data-detail={it.id} data-title={it.title} data-kicker={`${it.label} · ${it.period}`}>
+          <section class="detail-block">
+            <h3 class="detail-label">배운 점</h3>
+            {it.learned ? <p class="detail-text">{it.learned}</p> : <p class="detail-empty">{EMPTY}</p>}
+          </section>
+          <section class="detail-block">
+            <h3 class="detail-label">남은 질문</h3>
+            {it.questions ? <p class="detail-text">{it.questions}</p> : <p class="detail-empty">{EMPTY}</p>}
+          </section>
+        </template>
+      )),
+    )
+  }
+  {
+    activities.map((it) => (
+      <template data-detail={it.id} data-title={it.title} data-kicker={it.label}>
+        <section class="detail-block">
+          <dl class="detail-meta">
+            {it.role && (
+              <>
+                <dt>역할</dt>
+                <dd>{it.role}</dd>
+              </>
+            )}
+            {it.org && (
+              <>
+                <dt>소속</dt>
+                <dd>{it.org}</dd>
+              </>
+            )}
+            <dt>기간</dt>
+            <dd>{it.period}</dd>
+          </dl>
+        </section>
+        <section class="detail-block">
+          <h3 class="detail-label">요약</h3>
+          <p class="detail-text">{it.summary}</p>
+        </section>
+        {it.href && (
+          <section class="detail-block">
+            <a class="detail-link" href={it.href}>
+              포트폴리오에서 자세히 보기 <span aria-hidden="true">→</span>
+            </a>
+          </section>
+        )}
+      </template>
+    ))
+  }
+</section>
+
+<script>
+  import { animate } from 'motion';
+
+  const list = document.querySelector<HTMLElement>('[data-tablist]');
+  if (list) {
+    const tabs = [...list.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const pill = list.querySelector<HTMLElement>('[data-tab-pill]')!;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const SPRING = { type: 'spring', bounce: 0, duration: 0.4 } as const;
+
+    // 선택 표시(알약)를 선택된 탭 위치로. 처음과 크기 변경 때는 바로, 탭을 바꿀 때는 스프링으로
+    const placePill = (tab: HTMLElement, instant: boolean) => {
+      const to = { x: tab.offsetLeft, width: tab.offsetWidth };
+      animate(pill, to, instant || reduce.matches ? { duration: 0 } : SPRING);
+    };
+
+    const select = (tab: HTMLButtonElement, focus: boolean) => {
+      for (const t of tabs) {
+        const on = t === tab;
+        t.setAttribute('aria-selected', String(on));
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')!)!.hidden = !on;
+      }
+      placePill(tab, false);
+      if (focus) tab.focus();
+    };
+
+    const current = () => tabs.find((t) => t.getAttribute('aria-selected') === 'true') ?? tabs[0];
+
+    list.addEventListener('click', (ev) => {
+      const tab = (ev.target as HTMLElement).closest<HTMLButtonElement>('[role="tab"]');
+      if (tab) select(tab, false);
+    });
+
+    // 좌우 화살표·Home·End로 탭 이동 (자동 선택)
+    list.addEventListener('keydown', (ev) => {
+      const i = tabs.indexOf(current());
+      const next =
+        ev.key === 'ArrowRight' ? tabs[(i + 1) % tabs.length]
+        : ev.key === 'ArrowLeft' ? tabs[(i - 1 + tabs.length) % tabs.length]
+        : ev.key === 'Home' ? tabs[0]
+        : ev.key === 'End' ? tabs[tabs.length - 1]
+        : null;
+      if (!next) return;
+      ev.preventDefault();
+      select(next, true);
+    });
+
+    placePill(current(), true);
+    list.classList.add('is-ready');
+    new ResizeObserver(() => placePill(current(), true)).observe(list);
+  }
+</script>
+
+<style>
+  .records {
+    width: var(--content);
+    margin-inline: auto;
+    padding-block: clamp(3rem, 8vw, 6rem);
+  }
+
+  .records-head {
+    margin-bottom: clamp(1.75rem, 4vw, 2.5rem);
+  }
+
+  /* 세그먼트 탭: 선택 표시 알약이 스프링으로 따라간다 */
+  .tablist {
+    position: relative;
+    display: inline-flex;
+    padding: 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--fg) 7%, transparent);
+  }
+
+  .tab-pill {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 0;
+    border-radius: 999px;
+    background: var(--fg);
+    opacity: 0;
+  }
+  .tablist.is-ready .tab-pill {
+    opacity: 1;
+  }
+
+  .tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 40px;
+    padding: 0 1.125rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    font-size: 0.9375rem;
+    color: var(--muted);
+    cursor: pointer;
+    transition:
+      color 200ms ease-out,
+      transform 100ms ease-out;
+  }
+  .tab:hover {
+    color: var(--fg);
+  }
+  .tab[aria-selected='true'] {
+    color: var(--bg);
+  }
+  /* 스크립트가 알약을 놓기 전에는 선택 탭 자체에 배경 */
+  .tablist:not(.is-ready) .tab[aria-selected='true'] {
+    background: var(--fg);
+  }
+  .tab:active {
+    transform: scale(0.97);
+  }
+
+  .tab-count {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.7;
+  }
+
+  /* 목록 */
+  .group + .group {
+    margin-top: 2.5rem;
+  }
+
+  .group-title {
+    margin-bottom: 0.75rem;
+    font-size: 0.8125rem;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
+
+  .list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+
+  .list li {
+    border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+
+  .row {
+    display: grid;
+    gap: 0.25rem;
+    width: 100%;
+    padding: 1.125rem 0.75rem;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      transform 100ms ease-out;
+  }
+  .row:hover {
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
+  }
+  .row:active {
+    transform: scale(0.99);
+  }
+  /* 지금 패널에 열린 항목 */
+  .row[aria-expanded='true'] {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  /* 종류 라벨이 한글이라 고정폭 글꼴 대신 한글 글꼴 + 고정폭 숫자 */
+  .row-kicker {
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+
+  .row-title {
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    font-size: 1.0625rem;
+    line-height: 1.45;
+  }
+
+  .row-summary {
+    font-size: 0.9375rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .empty {
+    padding: 2rem 0;
+    color: var(--muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tab:active,
+    .row:active {
+      transform: none;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .tablist {
+      box-shadow: inset 0 0 0 1px var(--fg);
+    }
+  }
+</style>
