@@ -5,6 +5,8 @@ import { describe, expect, test } from 'vitest';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DIST = path.join(ROOT, 'dist');
+// Vitest가 process.env에 넣는 BASE_URL=/ 가 빌드의 import.meta.env.BASE_URL을 덮으므로 빼고 넘긴다.
+const { BASE_URL, MODE, DEV, PROD, SSR, ...BUILD_ENV } = process.env;
 
 function collectHtmlFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -76,7 +78,7 @@ describe('BASE_PATH 빌드 검증', () => {
     () => {
       execSync('npm run build', {
         cwd: ROOT,
-        env: { ...process.env, BASE_PATH: '/other/' },
+        env: { ...BUILD_ENV, BASE_PATH: '/other/' },
         stdio: 'pipe',
       });
 
@@ -124,7 +126,7 @@ describe('BASE_PATH 빌드 검증', () => {
     () => {
       execSync('npm run build', {
         cwd: ROOT,
-        env: { ...process.env, BASE_PATH: '/other' },
+        env: { ...BUILD_ENV, BASE_PATH: '/other' },
         stdio: 'pipe',
       });
 

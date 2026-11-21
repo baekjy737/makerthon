@@ -33,6 +33,8 @@ const rootCss = themeCss(profile.theme) + fontCss(profile.fonts);
     {noindex && <meta name="robots" content="noindex" />}
     <meta name="theme-color" content={profile.theme.bg} />
     <link rel="manifest" href={withBase('manifest.webmanifest')} />
+    <link rel="apple-touch-icon" href={withBase('icons/icon-192.png')} />
+    <script is:inline src={withBase('registerSW.js')}></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href={profile.fonts.display.css} />
