@@ -1,0 +1,439 @@
+---
+import { createSatteriMarkdownProcessor } from '@astrojs/markdown-satteri';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import Base from '../../layouts/Base.astro';
+import { publicOnly } from '../../lib/entries';
+import { TYPE_LABELS } from '../../lib/types';
+import { withBase } from '../../lib/url';
+
+export async function getStaticPaths() {
+  const entries = publicOnly(await getCollection('entries'));
+  return entries.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+interface Props {
+  entry: CollectionEntry<'entries'>;
+}
+
+const { entry } = Astro.props;
+const { data } = entry;
+
+function stripEssayMaterial(markdown: string): string {
+  const kept: string[] = [];
+  let skipping = false;
+
+  for (const line of markdown.split(/\r?\n/)) {
+    if (/^##\s+자소서 재료(?:\s+\{[^}]*\})?\s*$/.test(line)) {
+      skipping = true;
+      continue;
+    }
+
+    if (skipping && /^##\s+/.test(line)) skipping = false;
+    if (!skipping) kept.push(line);
+  }
+
+  return kept.join('\n').trim();
+}
+
+const safeMarkdown = stripEssayMaterial(entry.body ?? '');
+const processor = await createSatteriMarkdownProcessor();
+const compiled = await processor.render(safeMarkdown, {
+  fileURL: entry.filePath ? pathToFileURL(resolve(entry.filePath)) : undefined,
+  frontmatter: data,
+});
+const safeEntry: CollectionEntry<'entries'> = {
+  ...entry,
+  body: safeMarkdown,
+  rendered: {
+    html: compiled.code,
+    metadata: {
+      ...compiled.metadata,
+      imagePaths: compiled.metadata.localImagePaths,
+    },
+  },
+};
+const { Content } = await render(safeEntry);
+
+const formatDate = (date: Date) =>
+  new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long' }).format(date);
+const period = data.end ? `${formatDate(data.date)} – ${formatDate(data.end)}` : formatDate(data.date);
+const isImage = (path: string) => /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(path);
+const fileName = (path: string) => {
+  const name = path.split('/').filter(Boolean).at(-1) ?? '첨부 파일';
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+};
+---
+
+<Base title={data.title} description={data.summary}>
+  <article class="detail container">
+    <a class="back" href={withBase('/portfolio')}><span aria-hidden="true">←</span> 포트폴리오</a>
+
+    <header class="detail-header">
+      <div class="detail-header__meta">
+        <span>{TYPE_LABELS[data.type]}</span>
+        <time datetime={data.date.toISOString().slice(0, 10)}>{period}</time>
+      </div>
+      <h1>{data.title}</h1>
+      <p class="summary">{data.summary}</p>
+
+      {
+        (data.org || data.role) && (
+          <dl class="facts">
+            {data.org && <><dt>소속</dt><dd>{data.org}</dd></>}
+            {data.role && <><dt>역할</dt><dd>{data.role}</dd></>}
+          </dl>
+        )
+      }
+
+      {
+        data.tags.length > 0 && (
+          <ul class="tags" aria-label="태그">
+            {data.tags.map((tag) => <li>{tag}</li>)}
+          </ul>
+        )
+      }
+    </header>
+
+    <div class="detail-grid">
+      <div class="prose">
+        <Content />
+      </div>
+
+      {
+        (data.metrics.length > 0 || data.links.length > 0) && (
+          <aside class="sidebar" aria-label="성과와 관련 링크">
+            {data.metrics.length > 0 && (
+              <section>
+                <h2>성과</h2>
+                <ul class="metrics">
+                  {data.metrics.map((metric) => <li>{metric}</li>)}
+                </ul>
+              </section>
+            )}
+            {data.links.length > 0 && (
+              <section>
+                <h2>링크</h2>
+                <ul class="links">
+                  {data.links.map((link) => (
+                    <li><a href={link.url} target="_blank" rel="noreferrer">{link.label} <span aria-hidden="true">↗</span></a></li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </aside>
+        )
+      }
+    </div>
+
+    {
+      data.attachments.length > 0 && (
+        <section class="attachments" aria-labelledby="attachments-title">
+          <h2 id="attachments-title">첨부</h2>
+          <div class="attachments__grid">
+            {data.attachments.map((attachment, index) => {
+              const href = withBase(attachment);
+              return isImage(attachment) ? (
+                <a class="attachment attachment--image" href={href} target="_blank" rel="noreferrer">
+                  <img src={href} alt={`${data.title} 첨부 이미지 ${index + 1}`} loading="lazy" />
+                </a>
+              ) : (
+                <a class="attachment attachment--file" href={href} target="_blank" rel="noreferrer">
+                  <span>{fileName(attachment)}</span><span aria-hidden="true">↗</span>
+                </a>
+              );
+            })}
+          </div>
+        </section>
+      )
+    }
+
+    <footer class="detail-footer">
+      <a href={withBase('/archive')}>전체 기록 보기 <span aria-hidden="true">↗</span></a>
+    </footer>
+  </article>
+</Base>
+
+<style>
+  .detail {
+    padding-block: clamp(3rem, 7vw, 6rem) 7rem;
+  }
+
+  .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: clamp(3rem, 7vw, 6rem);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+  }
+
+  .back:hover {
+    color: var(--fg);
+  }
+
+  .detail-header {
+    max-width: 62rem;
+    padding-bottom: clamp(3rem, 7vw, 6rem);
+  }
+
+  .detail-header__meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.07em;
+  }
+
+  .detail-header__meta span {
+    color: var(--accent);
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  h1 {
+    max-width: 58rem;
+    font-size: clamp(2.8rem, 8vw, 6.8rem);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+  }
+
+  .summary {
+    max-width: 46rem;
+    margin-top: 2rem;
+    color: var(--muted);
+    font-size: clamp(1.05rem, 2.2vw, 1.35rem);
+    line-height: 1.65;
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.4rem 1.25rem;
+    margin: 2rem 0 0;
+    font-size: 0.92rem;
+  }
+
+  .facts dt {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .facts dd {
+    margin: 0;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 2rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tags li {
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--fg) 7%, transparent);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+  }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(13rem, 17rem);
+    gap: clamp(3rem, 8vw, 7rem);
+    padding-top: clamp(3rem, 7vw, 6rem);
+    border-top: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+  }
+
+  .prose {
+    min-width: 0;
+    max-width: 46rem;
+  }
+
+  :global(.prose > :first-child) {
+    margin-top: 0;
+  }
+
+  :global(.prose h2) {
+    margin: 2.8rem 0 1rem;
+    font-size: clamp(1.45rem, 3vw, 2rem);
+  }
+
+  :global(.prose h3) {
+    margin: 2rem 0 0.8rem;
+    font-size: 1.15rem;
+  }
+
+  :global(.prose p),
+  :global(.prose ul),
+  :global(.prose ol),
+  :global(.prose blockquote) {
+    margin: 1rem 0;
+    color: color-mix(in srgb, var(--fg) 84%, var(--muted));
+  }
+
+  :global(.prose ul),
+  :global(.prose ol) {
+    padding-left: 1.35rem;
+  }
+
+  :global(.prose a) {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  :global(.prose code) {
+    padding: 0.12em 0.35em;
+    border-radius: 0.3rem;
+    background: color-mix(in srgb, var(--fg) 9%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+  }
+
+  .sidebar section {
+    padding-top: 1rem;
+    border-top: 2px solid var(--accent);
+  }
+
+  .sidebar h2,
+  .attachments h2 {
+    margin-bottom: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .metrics,
+  .links {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .metrics li {
+    position: relative;
+    padding-left: 1rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .metrics li::before {
+    content: '';
+    position: absolute;
+    top: 0.7em;
+    left: 0;
+    width: 0.35rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .links a {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--fg);
+    font-family: var(--font-ko-bold);
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  .links a:hover {
+    color: var(--accent);
+  }
+
+  .attachments {
+    margin-top: clamp(4rem, 9vw, 8rem);
+    padding-top: 2rem;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+  }
+
+  .attachments__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .attachment {
+    border: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+    border-radius: 1rem;
+    overflow: hidden;
+  }
+
+  .attachment--image img {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+  }
+
+  .attachment--file {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem;
+  }
+
+  .detail-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: clamp(4rem, 9vw, 8rem);
+    padding-top: 2rem;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+  }
+
+  .detail-footer a {
+    color: var(--accent);
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+  }
+
+  @media (max-width: 760px) {
+    .detail-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .attachments__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .sidebar {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

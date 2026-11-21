@@ -1,0 +1,141 @@
+---
+import { getCollection } from 'astro:content';
+import EntryCard from '../../components/EntryCard.astro';
+import Base from '../../layouts/Base.astro';
+import { publicOnly, sortByDate } from '../../lib/entries';
+import { withBase } from '../../lib/url';
+
+const entries = sortByDate(publicOnly(await getCollection('entries'))).filter(
+  (entry) => entry.data.featured,
+);
+---
+
+<Base title="포트폴리오" description="대표 프로젝트와 경험을 모은 포트폴리오입니다.">
+  <div class="portfolio container">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">SELECTED WORK · {entries.length.toString().padStart(2, '0')}</p>
+        <h1>PORT<span>FOLIO</span></h1>
+      </div>
+      <p class="lede">
+        결과보다 과정이 오래 남는 작업을 골랐습니다. 역할과 배운 점, 구체적인 기록을 자세히 확인해 보세요.
+      </p>
+    </header>
+
+    {
+      entries.length > 0 ? (
+        <div class="portfolio-grid">
+          {entries.map((entry) => (
+            <EntryCard entry={entry} href={withBase(`/portfolio/${entry.id}/`)} />
+          ))}
+        </div>
+      ) : (
+        <div class="empty">
+          <p>아직 대표 작업이 없습니다.</p>
+          <a href={withBase('/archive')}>전체 아카이브 보기 →</a>
+        </div>
+      )
+    }
+
+    <footer class="portfolio-footer">
+      <p>더 많은 과정과 활동은 아카이브에 기록되어 있습니다.</p>
+      <a href={withBase('/archive')}>전체 아카이브 보기 <span aria-hidden="true">↗</span></a>
+    </footer>
+  </div>
+</Base>
+
+<style>
+  .portfolio {
+    padding-block: clamp(4rem, 9vw, 8rem) 8rem;
+  }
+
+  .page-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 0.6fr);
+    align-items: end;
+    gap: clamp(2rem, 7vw, 6rem);
+    padding-bottom: clamp(3rem, 7vw, 6rem);
+  }
+
+  .eyebrow {
+    margin-bottom: 1.25rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(4rem, 12vw, 10rem);
+    font-weight: 400;
+    line-height: 0.84;
+    letter-spacing: -0.035em;
+  }
+
+  h1 span {
+    color: var(--muted);
+  }
+
+  .lede {
+    padding-bottom: 0.45rem;
+    color: var(--muted);
+    font-size: clamp(1rem, 1.6vw, 1.1rem);
+  }
+
+  .portfolio-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(1rem, 2.5vw, 1.5rem);
+  }
+
+  .empty {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 3rem 0;
+    border-block: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+    color: var(--muted);
+  }
+
+  .empty a,
+  .portfolio-footer a {
+    color: var(--fg);
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+  }
+
+  .portfolio-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    margin-top: clamp(4rem, 9vw, 8rem);
+    padding-top: 2rem;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+    color: var(--muted);
+  }
+
+  .portfolio-footer a {
+    flex: none;
+    color: var(--accent);
+  }
+
+  @media (max-width: 760px) {
+    .page-header,
+    .portfolio-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .page-header {
+      align-items: start;
+    }
+
+    .portfolio-footer,
+    .empty {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+</style>
