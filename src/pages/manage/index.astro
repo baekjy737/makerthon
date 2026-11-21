@@ -6,14 +6,14 @@ import { loadProfile } from '../../lib/profile';
 import { issueUrl } from '../../lib/issue';
 import { TYPE_LABELS, TYPE_ORDER } from '../../lib/types';
 import { withBase } from '../../lib/url';
+import { sortByDate } from '../../lib/entries';
 import type { MemoFile } from '../../lib/memo';
 import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // 관리 페이지는 비공개 항목까지 전부 보여 준다(publicOnly를 거치지 않는다). 대신 noindex.
 const profile = loadProfile();
-// TODO(Task 3 병합 후): src/lib/entries.ts의 sortByDate로 교체
-const entries = (await getCollection('entries')).sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
+const entries = sortByDate(await getCollection('entries'));
 
 const counts = TYPE_ORDER.map((type) => ({ type, label: TYPE_LABELS[type], n: entries.filter((e) => e.data.type === type).length })).filter(
   (c) => c.n > 0,
