@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { parse, stringify } from 'yaml';
-import { contentPath } from '../.github/scripts/ai-content.mjs';
+import { contentPath, uploadRefs } from '../.github/scripts/ai-content.mjs';
 import { openingSchema } from '../src/lib/schema';
 
 describe('AI 콘텐츠 경로', () => {
@@ -287,5 +287,38 @@ describe('AI 콘텐츠 반영', () => {
       expect(run.stderr).toContain('HTML');
       expect(existsSync(join(root, file.path))).toBe(false);
     });
+  });
+});
+
+describe('업로드 브랜치 첨부 참조', () => {
+  const issue = (body: string, comments: string[] = []) => ({ title: 't', body, comments: comments.map((body) => ({ body })) });
+
+  test('형식에 맞는 줄만 읽는다', () => {
+    expect(uploadRefs(issue('메모\n첨부: upload/abcdefghij012345/cv.pdf\n'))).toEqual([
+      { branch: 'upload/abcdefghij012345', path: 'cv.pdf', ref: 'upload/abcdefghij012345/cv.pdf' },
+    ]);
+  });
+
+  test('경로 조작·짧은 nonce·다른 위치는 무시', () => {
+    const bad = [
+      '첨부: upload/abcdefghij012345/../main.md',
+      '첨부: upload/abc/cv.pdf',
+      '첨부: upload/abcdefghij012345/.env',
+      '첨부: upload/abcdefghij012345/a/b.pdf',
+      '첨부: https://github.com/evil/x/upload/abcdefghij012345/cv.pdf',
+      '앞글자 첨부: upload/abcdefghij012345/cv.pdf',
+      '첨부: upload/ABCDEFGHIJ012345/cv.pdf',
+      '첨부: upload/abcdefghij012345/a..pdf',
+    ];
+    expect(uploadRefs(issue(bad.join('\n')))).toEqual([]);
+  });
+
+  test('댓글의 참조도 읽고 중복은 한 번', () => {
+    const line = '첨부: upload/abcdefghij012345/cv.pdf';
+    expect(uploadRefs(issue(line, [line, '첨부: upload/zzzzzzzzzz012345/b.png']))).toHaveLength(2);
+  });
+
+  test('CRLF 줄바꿈과 끝 공백도 읽는다', () => {
+    expect(uploadRefs(issue('a\r\n첨부: upload/abcdefghij012345/cv.pdf  \r\nb'))).toHaveLength(1);
   });
 });

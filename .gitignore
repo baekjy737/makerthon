@@ -8,3 +8,5 @@ dist/
 .env.production
 npm-debug.log*
 .idea/
+.local-agent/
+.archive-input/

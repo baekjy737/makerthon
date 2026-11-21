@@ -123,6 +123,7 @@ const json = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
 <script>
   import { charCount, draftKey, draftStore, refineBody, selectedKey } from '../lib/essay';
   import { TRUNCATED_NOTE, issueUrl } from '../lib/issue';
+  import { canRequestHere, openIssue } from '../lib/agent';
   import type { WorkspaceQuestion } from './EssayWorkspace.astro';
 
   let storage: Storage | null = null;
@@ -242,11 +243,18 @@ const json = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
         save();
         const entry = current.entry === '_body' ? undefined : { id: current.entry, title: current.title };
         const body = refineBody({ app, n: q.n, company, position, question: q.question, limit: q.limit, entry, draft: text.value, checks: q.checks });
-        const url = issueUrl(repo, { label: 'essay', title: `[자소서] ${company} · 문항 ${q.n}`, body });
-        window.open(url, '_blank', 'noopener');
+        const opts = { label: 'essay' as const, title: `[자소서] ${company} · 문항 ${q.n}`, body };
+        // 사이트 대화창은 본문을 자르지 않는다. 잘림 안내는 GitHub 이슈 작성 URL로 갈 때만.
+        const here = canRequestHere();
+        const url = issueUrl(repo, opts);
+        const cut = !here && url.endsWith(encodeURIComponent(TRUNCATED_NOTE)) && !body.endsWith(TRUNCATED_NOTE);
+        openIssue(repo, opts);
         status.classList.remove('bad');
-        const cut = url.endsWith(encodeURIComponent(TRUNCATED_NOTE)) && !body.endsWith(TRUNCATED_NOTE);
-        status.textContent = cut ?'편집본이 길어서 앞부분만 담았어요. 열린 이슈에 나머지를 붙여 넣어 주세요.' : 'GitHub에서 이슈를 제출하면 AI가 다듬어요.';
+        status.textContent = here
+          ? '요청 창에서 보내면 AI가 다듬어요.'
+          : cut
+            ? '편집본이 길어서 앞부분만 담았어요. 열린 이슈에 나머지를 붙여 넣어 주세요.'
+            : 'GitHub에서 이슈를 제출하면 AI가 다듬어요.';
       });
 
       window.addEventListener('pagehide', save);
