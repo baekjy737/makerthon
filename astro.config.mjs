@@ -85,7 +85,7 @@ export default defineConfig({
     AstroPWAIntegration({
       registerType: 'autoUpdate',
       manifest: {
-        name: `${profile.nameKo} 아카이브`,
+        name: '아카이빙 프로젝트',
         short_name: profile.monogram,
         lang: 'ko',
         start_url: base,
