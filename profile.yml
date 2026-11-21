@@ -19,6 +19,9 @@ links: []
 #  - label: GitHub
 #    url: https://github.com/내아이디
 
+# 관심 분야. AI 추천(다음 공부·연구실·인턴)이 이 주제를 먼저 봐요. 비워 두면 기록만 보고 추천해요.
+interests: [DNA 손상 반응, 로봇 제어]
+
 repo: baekjy737/makerthon   # 내 저장소 owner/name (이슈 만들기 버튼에 쓰여요)
 
 # 색. 빼먹은 값은 기본값(다크 배경 + 파란 포인트)을 써요.
