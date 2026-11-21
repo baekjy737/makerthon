@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'vitest';
 import { interns, type Intern } from '../src/lib/data';
-import { fromIntern, loadOpenings, OPENING_KINDS, OPENING_LABELS, openingStatus, type Opening } from '../src/lib/openings';
+import {
+  fromIntern,
+  fromResearchProgram,
+  loadOpenings,
+  OPENING_KINDS,
+  OPENING_LABELS,
+  openingStatus,
+  researchPrograms,
+  type Opening,
+  type ResearchProgram,
+} from '../src/lib/openings';
 import { openingSchema } from '../src/lib/schema';
 
 const d = (s: string) => new Date(`${s}T00:00:00Z`);
@@ -80,6 +90,53 @@ describe('fromIntern', () => {
   });
 });
 
+describe('fromResearchProgram', () => {
+  test('RP26-001(POSTECH 기계공학과 동계 연구인턴)을 lab-intern·verified로 매핑', () => {
+    const p = researchPrograms.find((x) => x.id === 'RP26-001')!;
+    const o = fromResearchProgram(p);
+    expect(o).toMatchObject({
+      id: 'rp-RP26-001',
+      kind: 'lab-intern',
+      org: 'POSTECH',
+      title: '기계공학과 동계 연구인턴',
+      url: 'https://me.postech.ac.kr/ko/board/view?bd_id=notice&wr_id=957',
+      verified: true,
+      target: '타대학 포함 국내 이공계 학부 3~4학년 재학생 (타교 지원: 가능)',
+      eligibility: '휴학생·졸업생 불가, 생활관 제공',
+      tags: ['기계', '재료', '로봇'],
+    });
+    // start가 YYYY-MM이면 그 달 1일
+    expect(o.start?.toISOString().slice(0, 10)).toBe('2026-10-01');
+    expect(o.deadline?.toISOString().slice(0, 10)).toBe('2026-11-22');
+    expect(o.deadlineText).toBeUndefined();
+    expect(openingStatus(o, NOW)).toBe('open');
+  });
+
+  test('마감일이 없는 공고는 verified:false, deadlineText를 옮기고 확인 필요', () => {
+    const p = researchPrograms.find((x) => x.id === 'RP26-012')!;
+    const o = fromResearchProgram(p);
+    expect(o.verified).toBe(false);
+    expect(o.deadline).toBeUndefined();
+    expect(o.deadlineText).toBe('공고 확인');
+    // YYYY-MM-DD 시작일은 그대로
+    expect(o.start?.toISOString().slice(0, 10)).toBe('2026-11-09');
+    expect(openingStatus(o, NOW)).toBe('unverified');
+  });
+
+  test('분야의 "등"은 태그에서 뺀다', () => {
+    const o = fromResearchProgram({ ...researchPrograms[0], field: '양자·전자소재·로봇 등' });
+    expect(o.tags).toEqual(['양자', '전자소재', '로봇']);
+  });
+
+  test('51건 모두 lab-intern, id 중복 없음, verified는 마감일이 있을 때만', () => {
+    const all = researchPrograms.map(fromResearchProgram);
+    expect(all).toHaveLength(51);
+    expect(all.every((o) => o.kind === 'lab-intern')).toBe(true);
+    expect(new Set(all.map((o) => o.id)).size).toBe(51);
+    for (const o of all) expect(o.verified).toBe(o.deadline !== undefined);
+  });
+});
+
 describe('loadOpenings', () => {
   const entry = (id: string, deadline?: string) => ({
     id,
@@ -88,12 +145,32 @@ describe('loadOpenings', () => {
   const intern = (id: string, deadline?: string): Intern => ({ id, company: 'A', title: id, category: 'c', tags: [], verified: true, deadline, url: 'https://x' });
 
   test('마감일 오름차순, 마감일 없는 건 뒤로, 콘텐츠와 인턴 데이터를 합침', () => {
-    const r = loadOpenings([entry('c-late', '2026-12-31'), entry('c-none')], [intern('I1', '2026-12-01'), intern('I2')]);
+    const r = loadOpenings([entry('c-late', '2026-12-31'), entry('c-none')], [intern('I1', '2026-12-01'), intern('I2')], []);
     expect(r.map((o) => o.id)).toEqual(['intern-I1', 'c-late', 'c-none', 'intern-I2']);
   });
 
+  test('연구인턴 공고도 합쳐 같은 순서로 정렬', () => {
+    const rp = (id: string, deadline?: string): ResearchProgram => ({
+      id,
+      orgType: '대학원',
+      org: 'X',
+      program: id,
+      field: 'f',
+      crossSchool: '가능',
+      eligibility: 'e',
+      start: '2026-11',
+      period: 'p',
+      apply: 'a',
+      note: 'n',
+      url: 'https://x',
+      ...(deadline ? { deadline } : { deadlineText: '공고 확인' }),
+    });
+    const r = loadOpenings([entry('c', '2026-12-15')], [intern('I1', '2026-12-01')], [rp('R1', '2026-11-25'), rp('R2')]);
+    expect(r.map((o) => o.id)).toEqual(['rp-R1', 'intern-I1', 'c', 'rp-R2']);
+  });
+
   test('콘텐츠 항목은 frontmatter를 그대로 옮김', () => {
-    const [o] = loadOpenings([entry('s', '2026-12-31')], []);
+    const [o] = loadOpenings([entry('s', '2026-12-31')], [], []);
     expect(o).toMatchObject({ id: 's', kind: 'lab-intern', org: 'DGIST', verified: false, tags: [] });
   });
 });
