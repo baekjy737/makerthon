@@ -24,7 +24,7 @@ interests: [DNA 손상 반응, 로봇 제어]
 
 repo: baekjy737/makerthon   # 내 저장소 owner/name (이슈 만들기 버튼에 쓰여요)
 
-# 색. 빼먹은 값은 기본값(다크 배경 + 파란 포인트)을 써요.
+# 색. 원하는 색으로 바꿔 쓰세요.
 theme:
   bg: "#ffffff"       # 배경
   fg: "#20242a"       # 글자
