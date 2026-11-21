@@ -7,7 +7,7 @@ import { fontCss, themeCss } from '../lib/theme';
 import { withBase } from '../lib/url';
 
 interface Props {
-  /** 페이지 제목. 없으면 "<이름> 아카이브" */
+  /** 페이지 제목. 없으면 "아카이빙 프로젝트" */
   title?: string;
   description?: string;
   /** 검색엔진에 안 나오게 (관리 페이지 등) */
@@ -20,7 +20,7 @@ const {
   description = profile.intro.replace(/\*\*/g, ''),
   noindex = false,
 } = Astro.props;
-const fullTitle = title ? `${title} · ${profile.name.ko}` : `${profile.name.ko} 아카이브`;
+const fullTitle = title ? `${title} · 아카이빙 프로젝트` : '아카이빙 프로젝트';
 const rootCss = themeCss(profile.theme) + fontCss(profile.fonts);
 ---
 

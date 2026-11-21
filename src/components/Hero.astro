@@ -80,6 +80,15 @@ const initial = {
       <h2 id="home-edit-title">메인 페이지 수정</h2>
       <p class="editor-hint">수정한 내용은 이 브라우저에 저장됩니다.</p>
 
+      <fieldset data-home-photo-field hidden>
+        <legend>Photo</legend>
+        <label>프로필 사진
+          <span class="editor-hint" id="photo-hint">사이트 주인 Google 계정으로 로그인하면 바로 바뀌고 모든 방문자에게 보입니다. 4MB 이하 JPG·PNG·WebP.</span>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-describedby="photo-hint" data-home-photo-input />
+        </label>
+        <p class="editor-hint" data-home-photo-status role="status"></p>
+      </fieldset>
+
       <fieldset>
         <legend>Introduction</legend>
         <div class="editor-names">
@@ -115,7 +124,79 @@ const initial = {
 </section>
 
 <script>
+  import { firebaseEnabled, idToken, currentUser, signIn } from '../lib/firebaseClient';
+  import { withBase } from '../lib/url';
+
   const home = document.querySelector<HTMLElement>('.home-profile');
+
+  // 프로필 사진: Firestore site/profile.photo(공개 읽기)에 있으면 빌드된 사진·모노그램 대신 보여 준다
+  const showPhoto = (url: string) => {
+    const portrait = home?.querySelector<HTMLElement>('.portrait');
+    if (!portrait) return;
+    let img = portrait.querySelector<HTMLImageElement>('[data-home-portrait]');
+    if (!img) {
+      img = document.createElement('img');
+      img.dataset.homePortrait = '';
+      img.width = 640;
+      img.height = 800;
+      img.alt = home!.querySelector('[data-home-name]')?.textContent ?? '';
+      portrait.replaceChildren(img);
+    }
+    img.src = url;
+  };
+
+  if (home && firebaseEnabled) {
+    const project = import.meta.env.PUBLIC_FIREBASE_PROJECT_ID;
+    const key = import.meta.env.PUBLIC_FIREBASE_API_KEY;
+    fetch(`https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/documents/site/profile?key=${key}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((doc) => {
+        const url = doc?.fields?.photo?.stringValue;
+        if (typeof url === 'string' && url.startsWith('https://')) showPhoto(url);
+      })
+      .catch(() => {
+        // 읽지 못하면 빌드된 사진·모노그램을 그대로 둔다
+      });
+
+    const field = home.querySelector<HTMLElement>('[data-home-photo-field]')!;
+    const input = home.querySelector<HTMLInputElement>('[data-home-photo-input]')!;
+    const photoStatus = home.querySelector<HTMLElement>('[data-home-photo-status]')!;
+    field.hidden = false;
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (file.size > 4 * 1024 * 1024) {
+        photoStatus.textContent = '4MB 이하 이미지만 올릴 수 있어요.';
+        input.value = '';
+        return;
+      }
+      input.disabled = true;
+      try {
+        if (!(await currentUser())) {
+          photoStatus.textContent = 'Google 로그인 창에서 사이트 주인 계정을 고르세요.';
+          await signIn();
+        }
+        photoStatus.textContent = '사진을 올리는 중…';
+        const res = await fetch(withBase('/api/profile/photo'), {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${await idToken()}`, 'Content-Type': file.type },
+          body: file,
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || typeof body.photo !== 'string') throw new Error(body.error || '사진을 저장하지 못했어요.');
+        showPhoto(body.photo);
+        photoStatus.textContent = '사진을 바꿨어요. 모든 방문자에게 보입니다.';
+      } catch (e) {
+        const message = (e as Error).message || '';
+        // Firebase 로그인 오류는 영어라 한국어로 바꾼다
+        photoStatus.textContent = !message || message.startsWith('Firebase') ? '로그인하지 못해 사진을 저장하지 않았어요.' : message;
+      } finally {
+        input.disabled = false;
+        input.value = '';
+      }
+    });
+  }
+
   const form = home?.querySelector<HTMLFormElement>('[data-home-form]');
   const dialog = home?.querySelector<HTMLDialogElement>('[data-home-editor]');
   const editButton = home?.querySelector<HTMLButtonElement>('[data-edit-home]');

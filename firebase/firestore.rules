@@ -13,6 +13,8 @@ service cloud.firestore {
     match /next/{id} { allow read: if true; }
     match /matches/{id} { allow read: if true; }
     match /openings/{id} { allow read: if true; }
+    // 메인 프로필 사진 주소(site/profile.photo). 쓰기는 /api/profile/photo(서버)만
+    match /site/{id} { allow read: if true; }
     // 그 밖(requests 등)은 규칙이 없으므로 모두 거부된다
   }
 }
