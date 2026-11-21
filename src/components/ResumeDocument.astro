@@ -1,8 +1,8 @@
 ---
 import type { CollectionEntry } from 'astro:content';
 import Base from '../layouts/Base.astro';
+import { groupByType, publicOnly } from '../lib/entries';
 import { loadProfile } from '../lib/profile';
-import { resumeSections } from '../lib/resume';
 import { withBase } from '../lib/url';
 import '../styles/print.css';
 
@@ -13,7 +13,7 @@ interface Props {
 
 const { entries, application } = Astro.props;
 const profile = loadProfile();
-const sections = resumeSections(entries);
+const sections = groupByType(publicOnly(entries));
 const applicationLabel = application
   ? `${application.data.company} · ${application.data.position} 지원용`
   : undefined;
