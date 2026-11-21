@@ -1,9 +1,13 @@
 ---
 import { createSatteriMarkdownProcessor } from '@astrojs/markdown-satteri';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
+import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Base from '../../layouts/Base.astro';
+import MemoPanel from '../../components/MemoPanel.astro';
+import type { MemoFile } from '../../lib/memo';
+import { loadProfile } from '../../lib/profile';
 import { publicOnly } from '../../lib/entries';
 import { TYPE_LABELS } from '../../lib/types';
 import { withBase } from '../../lib/url';
@@ -19,6 +23,23 @@ interface Props {
 
 const { entry } = Astro.props;
 const { data } = entry;
+const profile = loadProfile();
+const entryPath = entry.filePath ?? `content/entries/${entry.id}.md`;
+
+// 메모 패널에 올릴 파일: 본문 Markdown + 첨부(frontmatter attachments와 public/archive/<id>/ 폴더) + 자료 링크
+const folder = resolve(process.cwd(), 'public/archive', entry.id);
+const inFolder = existsSync(folder)
+  ? readdirSync(folder, { withFileTypes: true })
+      .filter((d) => d.isFile() && !d.name.startsWith('.'))
+      .map((d) => `archive/${entry.id}/${d.name}`)
+  : [];
+const memoFiles: MemoFile[] = [
+  { ref: entryPath, label: '항목 본문', kind: 'entry' },
+  ...[...new Set([...data.attachments, ...inFolder])].map(
+    (a): MemoFile => ({ ref: `public/${a}`, label: a.split('/').pop()!, kind: 'file', href: withBase(a) }),
+  ),
+  ...data.links.map((l): MemoFile => ({ ref: l.url, label: l.label, kind: 'link', href: l.url })),
+];
 
 function stripEssayMaterial(markdown: string): string {
   const kept: string[] = [];
@@ -78,6 +99,19 @@ const fileName = (path: string) => {
       <div class="detail-header__meta">
         <span>{TYPE_LABELS[data.type]}</span>
         <time datetime={data.date.toISOString().slice(0, 10)}>{period}</time>
+        <button
+          type="button"
+          class="memo-open"
+          data-memo-open
+          data-id={entry.id}
+          data-title={data.title}
+          data-type-label={TYPE_LABELS[data.type]}
+          data-path={entryPath}
+          data-files={JSON.stringify(memoFiles)}
+          aria-haspopup="dialog"
+        >
+          메모·편집
+        </button>
       </div>
       <h1>{data.title}</h1>
       <p class="summary">{data.summary}</p>
@@ -157,6 +191,16 @@ const fileName = (path: string) => {
       <a href={withBase('/archive')}>전체 기록 보기 <span aria-hidden="true">↗</span></a>
     </footer>
   </article>
+
+  <!-- 메모 패널 전체 화면의 "항목 본문" 미리보기. 자소서 재료를 뺀 본문만 쓴다. -->
+  <template data-entry-preview={entry.id}>
+    <h1>{data.title}</h1>
+    <p class="pv-meta">{TYPE_LABELS[data.type]} · {period}{data.org && <> · {data.org}</>}{data.role && <> · {data.role}</>}</p>
+    <p class="pv-summary">{data.summary}</p>
+    <Content />
+  </template>
+
+  <MemoPanel repo={profile.repo} />
 </Base>
 
 <style>
@@ -193,6 +237,37 @@ const fileName = (path: string) => {
     font-family: var(--font-mono);
     font-size: 0.75rem;
     letter-spacing: 0.07em;
+  }
+
+  .memo-open {
+    margin-left: auto;
+    min-height: 2.25rem;
+    padding: 0 1rem;
+    border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--font-ko-bold);
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    cursor: pointer;
+    transition:
+      border-color 150ms ease-out,
+      transform 100ms ease-out;
+  }
+  .memo-open:hover,
+  .memo-open[aria-expanded='true'] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .memo-open:active {
+    transform: scale(0.97);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .memo-open:active {
+      transform: none;
+    }
   }
 
   .detail-header__meta span {

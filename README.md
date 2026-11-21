@@ -103,14 +103,14 @@ gh label create recommend --color ec4899 --description "다음 공부·진로 �
 
 ### GitHub 이슈로 AI에게 맡기기
 
-사이트의 `/manage` 페이지 버튼이나 저장소의 **Issues → New issue**에서 템플릿을 골라 이슈를 올리면 Claude Code Action이 자동으로 처리하고 빌드 검증 후 `main`에 반영합니다.
+사이트의 지원(`/apply`) 페이지 버튼이나 저장소의 **Issues → New issue**에서 템플릿을 골라 이슈를 올리면 Claude Code Action이 자동으로 처리하고 빌드 검증 후 `main`에 반영합니다.
 
 | 라벨 | 기능 |
 |---|---|
 | `archive` | 메모·링크·첨부 파일로 활동 항목 Markdown 작성 |
 | `job` | 채용 공고 분석, 항목별 적합도, 맞춤 이력서(`/resume/<공고>`) 생성 |
 | `essay` | 자소서 문항에 맞는 경험 추천 → 부족한 내용 질문 → 글자 수 맞춘 초안 작성 |
-| `memo` | `/manage` 메모 패널에 적은 내용을 기존 항목 본문에 보강 |
+| `memo` | 상세 페이지 메모 패널에 적은 내용을 기존 항목 본문에 보강 |
 | `recommend` | 공개 기록의 배운 점·남은 질문으로 다음 공부(`/next`)와 연구실·인턴 추천(`/match`) 갱신 |
 
 날짜·역할 등 핵심 정보가 빠져 있으면 AI가 임의로 지어내지 않고 이슈 댓글로 되묻습니다. 답변 댓글을 달면 이어서 처리합니다.

@@ -1,16 +1,12 @@
 ---
-import { getCollection, type CollectionEntry } from 'astro:content';
+import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
 import Hero from '../components/Hero.astro';
 import StatStrip from '../components/StatStrip.astro';
-import StudyTabs, { type ActivityItem, type StudyItem } from '../components/StudyTabs.astro';
-import DetailPanel from '../components/DetailPanel.astro';
-import RecommendPreview from '../components/RecommendPreview.astro';
+import EntryCard from '../components/EntryCard.astro';
 import { publicOnly, sortByDate } from '../lib/entries';
 import { loadProfile } from '../lib/profile';
 import { archiveStats } from '../lib/stats';
-import { groupByTopic, section } from '../lib/study';
-import { STUDY_TYPES, TYPE_LABELS } from '../lib/types';
 import { withBase } from '../lib/url';
 
 const GRADUATION_URL = 'https://my.dgist.ac.kr/com/portal/index.do';
@@ -21,37 +17,7 @@ const stats = archiveStats(entries, new Date());
 const pub = sortByDate(publicOnly(entries));
 const last = pub[0]?.data.date;
 
-const ym = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-const period = (start: Date, end?: Date) => (end && ym(end) !== ym(start) ? `${ym(start)} – ${ym(end)}` : ym(start));
-
-type Entry = CollectionEntry<'entries'>;
-const isStudy = (e: Entry) => (STUDY_TYPES as readonly string[]).includes(e.data.type);
-
-// 공부 기록: 주제별로 묶고, 패널에는 본문의 배운 점·남은 질문
-const study: { topic: string; items: StudyItem[] }[] = groupByTopic(pub.filter(isStudy)).map((g) => ({
-  topic: g.topic,
-  items: g.items.map((e) => ({
-    id: e.id,
-    title: e.data.title,
-    label: TYPE_LABELS[e.data.type],
-    period: period(e.data.date, e.data.end),
-    summary: e.data.summary,
-    learned: section(e.body ?? '', '배운 점'),
-    questions: section(e.body ?? '', '남은 질문'),
-  })),
-}));
-
-// 활동: 공부 기록이 아닌 공개 항목, 최신순
-const activities: ActivityItem[] = pub.filter((e) => !isStudy(e)).map((e) => ({
-  id: e.id,
-  title: e.data.title,
-  label: TYPE_LABELS[e.data.type],
-  period: period(e.data.date, e.data.end),
-  summary: e.data.summary,
-  role: e.data.role,
-  org: e.data.org,
-  href: e.data.featured ? withBase(`/portfolio/${e.id}/`) : undefined,
-}));
+const featured = pub.filter((e) => e.data.featured);
 ---
 
 <Base>
@@ -72,9 +38,24 @@ const activities: ActivityItem[] = pub.filter((e) => !isStudy(e)).map((e) => ({
     </a>
   </nav>
 
-  <StudyTabs study={study} activities={activities} />
-  <RecommendPreview />
-  <DetailPanel />
+  <section id="portfolio" class="portfolio" aria-labelledby="portfolio-title">
+    <header class="portfolio-head">
+      <p class="eyebrow">SELECTED WORK · {featured.length.toString().padStart(2, '0')}</p>
+      <h2 id="portfolio-title">PORT<span>FOLIO</span></h2>
+    </header>
+    {
+      featured.length > 0 ? (
+        <div class="portfolio-grid">
+          {featured.map((entry) => (
+            <EntryCard entry={entry} href={withBase(`/portfolio/${entry.id}/`)} />
+          ))}
+        </div>
+      ) : (
+        <p class="empty">아직 대표 작업이 없습니다.</p>
+      )
+    }
+    <a class="more" href={withBase('/archive')}>전체 아카이브 보기 <span aria-hidden="true">↗</span></a>
+  </section>
 </Base>
 
 <style>
@@ -124,6 +105,55 @@ const activities: ActivityItem[] = pub.filter((e) => !isStudy(e)).map((e) => ({
     translate: 0 -50%;
     color: var(--accent);
     font-size: 1.125rem;
+  }
+
+  .portfolio {
+    width: var(--content);
+    margin-inline: auto;
+    padding-block: clamp(4rem, 9vw, 7rem) clamp(5rem, 10vw, 8rem);
+    scroll-margin-top: 4rem;
+  }
+  .portfolio-head {
+    margin-bottom: clamp(2rem, 5vw, 3.5rem);
+  }
+  .eyebrow {
+    margin-bottom: 1rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+  }
+  .portfolio h2 {
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 9vw, 7rem);
+    font-weight: 400;
+    line-height: 0.86;
+    letter-spacing: -0.035em;
+  }
+  .portfolio h2 span {
+    color: var(--muted);
+  }
+  .portfolio-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(1rem, 2.5vw, 1.5rem);
+  }
+  .empty {
+    color: var(--muted);
+    padding: 2rem 0;
+  }
+  .more {
+    display: inline-block;
+    margin-top: clamp(2.5rem, 6vw, 4rem);
+    color: var(--accent);
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+  }
+
+  @media (max-width: 760px) {
+    .portfolio-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 560px) {
