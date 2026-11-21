@@ -4,8 +4,8 @@ import LabCard from '../../components/LabCard.astro';
 import Base from '../../layouts/Base.astro';
 import { findTarget, interns, labs } from '../../lib/data';
 import { issueUrl } from '../../lib/issue';
-import { matchLabs } from '../../lib/labMatch';
-import { loadOpenings, openingStatus } from '../../lib/openings';
+import { matchLabs, matchTopics } from '../../lib/labMatch';
+import { loadOpenings, openingStatus, researchPrograms, researchTopics } from '../../lib/openings';
 import { loadProfile } from '../../lib/profile';
 import { resolveFrom } from '../../lib/recommend';
 import { withBase } from '../../lib/url';
@@ -21,13 +21,19 @@ const matchItems = (await getCollection('matches'))
   .sort((a, b) => b.data.score - a.data.score)
   .slice(0, 3);
 
-const openings = loadOpenings(await getCollection('openings'), interns);
+const openings = loadOpenings(await getCollection('openings'), interns, researchPrograms);
 const openByLab = new Map(
   openings
     .filter((opening) => opening.lab && openingStatus(opening, new Date()) === 'open')
     .map((opening) => [opening.lab!, opening]),
 );
 const labMatches = matchLabs(labs, profile.interests);
+const topicMatches = matchTopics(researchTopics, profile.interests);
+const explorerCount = labMatches.length + topicMatches.length;
+const organizations = [
+  ...(labMatches.length > 0 ? ['DGIST'] : []),
+  ...new Set(topicMatches.map(({ topic }) => topic.org)),
+];
 const interests = [...new Set(profile.interests.map((interest) => interest.trim()).filter(Boolean))];
 
 const recommendUrl = issueUrl(profile.repo, {
@@ -109,27 +115,53 @@ const recommendUrl = issueUrl(profile.repo, {
 
   <section class="section container lab-explorer" aria-labelledby="labs-title">
     <div class="section-head section-head--labs">
-      <div><p class="eyebrow">LAB EXPLORER</p><h2 id="labs-title">연구실 탐색</h2><p class="section-copy">프로필 관심사가 연구실 소개·학과·연구 주제와 맞는 곳을 모았어요. 모집 공고가 없어도 탐색할 수 있어요.</p></div>
-      <p class="lab-count" aria-live="polite"><strong data-visible-count>{labMatches.length}</strong>개 연구실</p>
+      <div><p class="eyebrow">LAB EXPLORER</p><h2 id="labs-title">연구실 탐색</h2><p class="section-copy">DGIST 연구실과 다른 기관의 연구 인턴 주제를 관심사에 맞춰 모았어요. 모집 공고가 없어도 탐색할 수 있어요.</p></div>
+      <p class="lab-count" aria-live="polite"><strong data-visible-count>{explorerCount}</strong>개 연구실·주제</p>
     </div>
-    {interests.length > 0 && <div class="interest-filter" aria-label="관심사로 연구실 필터"><button type="button" class="active" data-interest="all" aria-pressed="true">전체</button>{interests.map((interest) => <button type="button" data-interest={interest} aria-pressed="false">{interest}</button>)}</div>}
-    {labMatches.length === 0 ? <p class="empty">현재 관심사와 정확히 맞는 연구실을 찾지 못했어요. profile.yml의 interests를 더 짧은 키워드로 적어 보세요.</p> : <div class="lab-grid" data-lab-grid>{labMatches.map(({ lab, hits }) => <LabCard lab={lab} hits={hits} opening={openByLab.get(lab.id)} />)}</div>}
+    <div class="explorer-filters">
+      {organizations.length > 0 && <div class="filter-group"><p>기관</p><div class="interest-filter" aria-label="기관으로 연구실 필터"><button type="button" class="active" data-org-filter="all" aria-pressed="true">전체 기관</button>{organizations.map((org) => <button type="button" data-org-filter={org} aria-pressed="false">{org}</button>)}</div></div>}
+      {interests.length > 0 && <div class="filter-group"><p>관심사</p><div class="interest-filter" aria-label="관심사로 연구실 필터"><button type="button" class="active" data-interest="all" aria-pressed="true">전체 관심사</button>{interests.map((interest) => <button type="button" data-interest={interest} aria-pressed="false">{interest}</button>)}</div></div>}
+    </div>
+    {explorerCount === 0 ? <p class="empty">현재 관심사와 정확히 맞는 연구실을 찾지 못했어요. profile.yml의 interests를 더 짧은 키워드로 적어 보세요.</p> : <div class="lab-grid" data-lab-grid>{labMatches.map(({ lab, hits }) => <LabCard lab={lab} hits={hits} opening={openByLab.get(lab.id)} />)}{topicMatches.map(({ topic, hits }) => <LabCard topic={topic} hits={hits} />)}</div>}
     <p class="empty filter-empty" data-filter-empty hidden>이 관심사와 맞는 연구실이 없어요.</p>
   </section>
 </Base>
 
 <script>
-  const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-interest]')];
+  const interestButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-interest]')];
+  const orgButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-org-filter]')];
   const cards = [...document.querySelectorAll<HTMLElement>('[data-lab-card]')];
   const count = document.querySelector<HTMLElement>('[data-visible-count]');
   const empty = document.querySelector<HTMLElement>('[data-filter-empty]');
-  buttons.forEach((button) => button.addEventListener('click', () => {
-    const selected = button.dataset.interest ?? 'all';
+  let selectedInterest = 'all';
+  let selectedOrg = 'all';
+
+  const selectButton = (buttons: HTMLButtonElement[], selected: HTMLButtonElement) => {
+    buttons.forEach((button) => { const active = button === selected; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+  };
+  const applyFilters = () => {
     let visible = 0;
-    buttons.forEach((candidate) => { const active = candidate === button; candidate.classList.toggle('active', active); candidate.setAttribute('aria-pressed', String(active)); });
-    cards.forEach((card) => { const hits = JSON.parse(card.dataset.hits ?? '[]') as string[]; const show = selected === 'all' || hits.includes(selected); card.hidden = !show; if (show) visible += 1; });
+    cards.forEach((card) => {
+      const hits = JSON.parse(card.dataset.hits ?? '[]') as string[];
+      const matchesInterest = selectedInterest === 'all' || hits.includes(selectedInterest);
+      const matchesOrg = selectedOrg === 'all' || card.dataset.org === selectedOrg;
+      const show = matchesInterest && matchesOrg;
+      card.hidden = !show;
+      if (show) visible += 1;
+    });
     if (count) count.textContent = String(visible);
     if (empty) empty.hidden = visible !== 0;
+  };
+
+  interestButtons.forEach((button) => button.addEventListener('click', () => {
+    selectedInterest = button.dataset.interest ?? 'all';
+    selectButton(interestButtons, button);
+    applyFilters();
+  }));
+  orgButtons.forEach((button) => button.addEventListener('click', () => {
+    selectedOrg = button.dataset.orgFilter ?? 'all';
+    selectButton(orgButtons, button);
+    applyFilters();
   }));
 </script>
 
@@ -174,7 +206,10 @@ const recommendUrl = issueUrl(profile.repo, {
   .section-head--labs { align-items: end; }
   .lab-count { color: var(--muted); white-space: nowrap; }
   .lab-count strong { color: var(--fg); font-family: var(--font-mono); font-size: 1.5rem; }
+  .explorer-filters { display: grid; gap: .75rem; margin-bottom: 1.5rem; }
+  .filter-group > p { margin-bottom: .5rem; color: var(--muted); font-size: .75rem; }
   .interest-filter { display: flex; gap: .5rem; margin-bottom: 1.5rem; overflow-x: auto; scrollbar-width: thin; }
+  .filter-group .interest-filter { margin-bottom: 0; }
   .interest-filter button { flex: 0 0 auto; padding: .55rem .9rem; border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: .875rem; }
   .interest-filter button.active { border-color: var(--fg); background: var(--fg); color: var(--bg); }
   .filter-empty { padding-block: 1.5rem; }

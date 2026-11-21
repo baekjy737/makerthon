@@ -1,33 +1,42 @@
 ---
 import type { Lab } from '../lib/data';
-import type { Opening } from '../lib/openings';
+import type { Opening, ResearchTopic } from '../lib/openings';
+import { normalizeInterest } from '../lib/labMatch';
 import { withBase } from '../lib/url';
 
 interface Props {
-  lab: Lab;
+  lab?: Lab;
+  topic?: ResearchTopic;
   hits: string[];
   opening?: Opening;
 }
 
-const { lab, hits, opening } = Astro.props;
-const normalizedHits = new Set(hits.map((hit) => hit.toLocaleLowerCase().replace(/\s+/g, '')));
-const isHit = (topic: string) => {
-  const normalized = topic.toLocaleLowerCase().replace(/\s+/g, '');
+const { lab, topic, hits, opening } = Astro.props;
+if (!lab && !topic) throw new Error('LabCard에는 lab 또는 topic이 필요합니다.');
+const normalizedHits = new Set(hits.map(normalizeInterest));
+const isHit = (value: string) => {
+  const normalized = normalizeInterest(value);
   return [...normalizedHits].some((hit) => normalized.includes(hit) || hit.includes(normalized));
 };
+const org = topic?.org ?? 'DGIST';
+const division = topic?.division?.trim();
+const title = lab ? (lab.lab ?? lab.name) : (topic?.lab || (topic?.professor ? `${topic.professor} 연구실` : topic?.program));
+const subtitle = lab ? `${lab.name} 교수` : [topic?.professor && `${topic.professor} 교수`, topic?.program].filter(Boolean).join(' · ');
+const summary = lab?.summary ?? topic?.topic ?? '';
+const topicTags = topic ? [topic.category, topic.division, `타교 지원 ${topic.crossSchool}`].filter(Boolean) : [];
 ---
 
-<article class="lab-card" data-lab-card data-hits={JSON.stringify(hits)}>
+<article class="lab-card" data-lab-card data-hits={JSON.stringify(hits)} data-org={org}>
   <div class="lab-card__top">
-    <p class="lab-card__dept">{lab.dept}</p>
+    <p class="lab-card__dept">{topic ? [topic.org, division].filter(Boolean).join(' · ') : lab?.dept}</p>
     {hits.length > 0 && <span class="lab-card__match">관심사 {hits.length}개 일치</span>}
   </div>
 
-  <h3>{lab.lab ?? lab.name}</h3>
-  <p class="lab-card__professor">{lab.name} 교수</p>
-  <p class="lab-card__summary">{lab.summary}</p>
+  <h3>{title}</h3>
+  <p class="lab-card__professor">{subtitle}</p>
+  <p class:list={{ 'lab-card__summary': true, matched: !!topic && isHit(summary) }}>{summary}</p>
 
-  {lab.internTopics.length > 0 && (
+  {lab && lab.internTopics.length > 0 && (
     <div class="lab-card__topics">
       <p>연구·인턴 주제</p>
       <ul>
@@ -37,6 +46,12 @@ const isHit = (topic: string) => {
       </ul>
     </div>
   )}
+  {topic && topicTags.length > 0 && (
+    <div class="lab-card__topics">
+      <p>분야·지원 조건</p>
+      <ul>{topicTags.map((tag) => <li class:list={{ matched: isHit(tag) }}>{tag}</li>)}</ul>
+    </div>
+  )}
 
   <div class="lab-card__actions">
     {opening && (
@@ -44,9 +59,14 @@ const isHit = (topic: string) => {
         모집 공고 보기 <span aria-hidden="true">→</span>
       </a>
     )}
-    {lab.homepage && (
+    {lab?.homepage && (
       <a href={lab.homepage} target="_blank" rel="noopener">
         연구실 홈페이지 <span class="visually-hidden">(새 탭)</span>
+      </a>
+    )}
+    {topic?.url && (
+      <a class="lab-card__apply" href={topic.url} target="_blank" rel="noopener">
+        원문 공고 <span aria-hidden="true">↗</span><span class="visually-hidden">(새 탭)</span>
       </a>
     )}
   </div>
@@ -106,6 +126,12 @@ const isHit = (topic: string) => {
   .lab-card__summary {
     margin-top: 1rem;
     line-height: 1.65;
+  }
+
+  .lab-card__summary.matched {
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
   .lab-card__topics {
