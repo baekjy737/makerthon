@@ -131,3 +131,30 @@ select {
     scroll-behavior: auto;
   }
 }
+.lift-card {
+  --card-depth: 4px 8px 16px color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 72%, var(--bg));
+  background: color-mix(in srgb, var(--bg) 97%, var(--fg));
+  box-shadow: var(--card-ring, none);
+  transition: transform 240ms var(--ease-out), box-shadow 240ms var(--ease-out);
+}
+
+@media (hover: hover) {
+  .lift-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--card-depth), var(--card-ring, 0 0 0 transparent);
+  }
+}
+
+.lift-card:focus-visible,
+.lift-card:has(:focus-visible) {
+  box-shadow: var(--card-depth), var(--card-ring, 0 0 0 transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lift-card,
+  .lift-card:hover {
+    transition: none;
+    transform: none;
+  }
+}

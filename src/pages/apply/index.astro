@@ -146,7 +146,7 @@ const actions = [
               const deadline = data.deadline?.toISOString().slice(0, 10);
               return (
                 <li>
-                  <a href={withBase(`apply/${id}/`)}>
+                  <a class="lift-card" href={withBase(`apply/${id}/`)}>
                     <div>
                       <p class="company">{data.company}</p>
                       <h3>{data.position}</h3>
@@ -563,14 +563,7 @@ const actions = [
     justify-content: space-between;
     gap: 0.5rem 2rem;
     padding: clamp(1.1rem, 3vw, 1.75rem);
-    border: 1px solid color-mix(in srgb, var(--muted) 50%, transparent);
     border-radius: 0.75rem;
-  }
-
-  .app-list li > a:hover,
-  .app-list li > a:active {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 8%, var(--bg));
   }
 
   .app-list h3 {

@@ -19,7 +19,7 @@ const resources = data.resources.slice(0, 2);
 
 {
   from.length > 0 && (
-    <article class="rc" data-plan-item={`next:${item.id}`}>
+    <article class="rc lift-card" data-plan-item={`next:${item.id}`}>
       <p class="rc-eyebrow">다음에 할 공부</p>
       <h3 class="rc-title">
         <a href={href}>{data.topic}</a>
@@ -103,11 +103,7 @@ const resources = data.resources.slice(0, 2);
     min-width: 0;
     height: 100%;
     padding: clamp(1.25rem, 3vw, 1.75rem);
-    border: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
     border-radius: 1.25rem;
-    background:
-      linear-gradient(145deg, color-mix(in srgb, var(--fg) 5%, transparent), transparent 58%),
-      color-mix(in srgb, var(--bg) 94%, var(--fg));
   }
   .rc[hidden] {
     display: none;

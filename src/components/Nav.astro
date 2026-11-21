@@ -106,8 +106,8 @@ const activeItem = items.find(({ href }) => isCurrent(href));
   const surface = tabs?.querySelector<HTMLElement>('.glass-surface');
   if (tabs && list && current && compactButton && surface) {
     let scrollAnchor = Math.max(0, window.scrollY);
+    let hoverScrollY: number | undefined;
     let frame = 0;
-    let idleTimer: number | undefined;
     let resizeAnimation: AnimationPlaybackControls | undefined;
 
     const clearSurfaceSize = () => {
@@ -138,28 +138,48 @@ const activeItem = items.find(({ href }) => isCurrent(href));
     const updateOnScroll = () => {
       frame = 0;
       const position = Math.max(0, window.scrollY);
-      const distance = position - scrollAnchor;
-      if (position <= 48 || distance <= -14) {
+      if (hoverScrollY !== undefined && position <= hoverScrollY - 14) hoverScrollY = undefined;
+      if (position <= 48) {
         setCompact(false);
         scrollAnchor = position;
-      } else if (distance >= 20) {
-        if (!list.querySelector(':focus-visible')) setCompact(true);
-        scrollAnchor = position;
+      } else if (tabs.hasAttribute('data-compact')) {
+        scrollAnchor = Math.max(scrollAnchor, position);
+        if (scrollAnchor - position >= 14) {
+          setCompact(false);
+          scrollAnchor = position;
+        }
+      } else {
+        scrollAnchor = Math.min(scrollAnchor, position);
+        if (position - scrollAnchor >= 20 && !list.querySelector(':focus-visible')) {
+          setCompact(true);
+          scrollAnchor = position;
+        }
       }
     };
 
     window.addEventListener('scroll', () => {
       if (!frame) frame = requestAnimationFrame(updateOnScroll);
-      window.clearTimeout(idleTimer);
-      idleTimer = window.setTimeout(() => {
-        scrollAnchor = Math.max(0, window.scrollY);
-        setCompact(false);
-      }, 180);
     }, { passive: true });
 
-    compactButton.addEventListener('click', () => {
+    const expandMenu = () => {
       scrollAnchor = Math.max(0, window.scrollY);
       setCompact(false);
+    };
+
+    compactButton.addEventListener('click', () => {
+      hoverScrollY = undefined;
+      expandMenu();
+    });
+    // Require pointer movement so a capsule appearing under a parked cursor stays collapsed.
+    compactButton.addEventListener('pointermove', (event) => {
+      if (event.pointerType !== 'mouse') return;
+      hoverScrollY = Math.max(0, window.scrollY);
+      expandMenu();
+    });
+    tabs.addEventListener('pointerleave', () => {
+      if (hoverScrollY === undefined) return;
+      hoverScrollY = undefined;
+      if (window.scrollY > 48 && !list.querySelector(':focus-visible')) setCompact(true);
     });
   }
 </script>
