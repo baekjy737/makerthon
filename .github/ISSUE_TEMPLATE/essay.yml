@@ -1,25 +1,26 @@
-name: 자소서 쓰기
-description: 지원 문항에 맞는 경험을 고르고 자기소개서 초안을 작성합니다.
-title: "[자소서] "
+name: 지원서 올리기 / 자소서 쓰기
+description: 지원서 양식(PDF·이미지)이나 문항 원문을 올리면 문항별 추천 소재와 초안을 작성합니다.
+title: "[지원서] "
 labels: [essay]
 body:
   - type: input
     id: target
     attributes:
       label: 지원처
-      description: 지원하는 회사나 기관 이름과 직무를 적어 주세요.
+      description: 지원하는 기관·연구실·회사 이름과 직무 또는 프로그램명을 적어 주세요.
+      placeholder: "예: DGIST 뉴바이올로지학과 하계 인턴 / ○○기업 로보틱스 인턴"
     validations:
       required: true
   - type: textarea
-    id: question
+    id: form
     attributes:
-      label: 자소서 문항
-      description: 답변하려는 문항 하나를 원문 그대로 붙여 넣어 주세요.
+      label: 지원서 양식 파일(PDF·이미지) 또는 문항 원문
+      description: 지원서 양식 PDF나 이미지를 이 칸에 끌어다 놓거나, 문항 전체와 각 문항의 글자 수 제한을 원문 그대로 붙여 넣어 주세요. 기존 초안 다듬기 요청이라면 문항·선택 소재·편집본을 적어 주세요.
     validations:
       required: true
   - type: input
     id: limit
     attributes:
-      label: 글자 수 제한
-      description: 제한이 있으면 공백을 포함한 최대 글자 수를 적어 주세요.
+      label: 공통 글자 수 제한 (선택)
+      description: 양식이나 문항에 개별 글자 수 제한이 없고 공통 제한만 있는 경우 공백 포함 최대 글자 수를 적어 주세요.
       placeholder: "800"
