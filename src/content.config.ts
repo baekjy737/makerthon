@@ -1,8 +1,8 @@
 import { defineCollection } from 'astro:content';
 import { glob } from 'astro/loaders';
-import { applicationSchema, entrySchema, essaySchema } from './lib/schema';
+import { applicationSchema, entrySchema, essaySchema, matchSchema, nextSchema } from './lib/schema';
 
-export { applicationSchema, entrySchema, essaySchema };
+export { applicationSchema, entrySchema, essaySchema, matchSchema, nextSchema };
 
 const entries = defineCollection({
   loader: glob({ pattern: '**/*.md', base: './content/entries' }),
@@ -24,4 +24,15 @@ const essays = defineCollection({
   schema: essaySchema,
 });
 
-export const collections = { entries, applications, essays };
+// id = 파일명에서 .md를 뺀 값
+const next = defineCollection({
+  loader: glob({ pattern: '*.md', base: './content/next' }),
+  schema: nextSchema,
+});
+
+const matches = defineCollection({
+  loader: glob({ pattern: '*.md', base: './content/matches' }),
+  schema: matchSchema,
+});
+
+export const collections = { entries, applications, essays, next, matches };

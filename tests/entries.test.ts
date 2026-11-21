@@ -30,3 +30,8 @@ test('groupByType 그룹 안은 최신순', () => {
   const g = groupByType([e('p1', 'project', '2025-01-01'), e('p2', 'project', '2026-01-01')]);
   expect(g[0].items.map((x) => x.id)).toEqual(['p2', 'p1']);
 });
+
+test('groupByType(이력서)은 공부 기록을 뺀다', () => {
+  const g = groupByType([e('a', 'course', '2026-03-01'), e('p', 'paper', '2026-10-01'), e('b', 'project', '2026-01-01')]);
+  expect(g.map((x) => x.type)).toEqual(['project']);
+});

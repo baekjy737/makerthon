@@ -1,4 +1,4 @@
-export type IssueLabel = 'archive' | 'job' | 'essay' | 'memo';
+export type IssueLabel = 'archive' | 'job' | 'essay' | 'memo' | 'recommend';
 
 export interface IssueOptions {
   label: IssueLabel;

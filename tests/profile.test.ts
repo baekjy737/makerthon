@@ -44,3 +44,13 @@ test('저장소의 profile.yml을 읽음', () => {
   expect(p.name.ko).toBeTruthy();
   expect(p.repo).toMatch(/^[^/]+\/[^/]+$/);
 });
+
+describe('interests', () => {
+  const MIN_YAML = 'name: {ko: a, line1: A, line2: B, line3: C}\nmonogram: X\nintro: x\nrepo: a/b';
+  test('profile interests 기본값', () => {
+    expect(loadProfile(MIN_YAML).interests).toEqual([]);
+  });
+  test('적으면 문자열 배열로 읽음', () => {
+    expect(loadProfile(MIN_YAML + '\ninterests: [DNA 손상 반응, 로봇 제어]').interests).toEqual(['DNA 손상 반응', '로봇 제어']);
+  });
+});

@@ -22,6 +22,8 @@ export interface Profile {
   photo?: string;
   email?: string;
   links: { label: string; url: string }[];
+  /** 관심 분야. 추천(recommend 스킬)이 다음 공부와 기회를 고를 때 쓴다 */
+  interests: string[];
   /** owner/name */
   repo: string;
   theme: Theme;
@@ -86,6 +88,7 @@ export function loadProfile(raw?: string): Profile {
     links: Array.isArray(y.links)
       ? y.links.map((l: Raw, i: number) => ({ label: need(l?.label, `links[${i}].label`), url: need(l?.url, `links[${i}].url`) }))
       : [],
+    interests: Array.isArray(y.interests) ? y.interests.map(optional).filter((x: string | undefined): x is string => !!x) : [],
     repo,
     theme: {
       bg: optional(theme.bg) ?? DEFAULT_THEME.bg,
