@@ -1,7 +1,7 @@
 // 스키마는 astro:content 없이 import할 수 있도록 여기 둔다(Vitest용).
 // src/content.config.ts가 이 파일을 import해 collection을 만든다.
 import { z } from 'astro/zod';
-import { ENTRY_TYPES } from './types';
+import { ENTRY_TYPES, OPENING_KINDS } from './types';
 
 export const entrySchema = z.object({
   type: z.enum(ENTRY_TYPES),
@@ -47,6 +47,10 @@ export const essaySchema = z.object({
   question: z.string(),
   limit: z.number().optional(),
   entries: z.array(z.string()).default([]),
+  /** 문항별 추천 소재. entry = 항목 id, draft = 그 소재로 쓴 초안(글자 수 제한 안) */
+  materials: z.array(z.object({ entry: z.string(), reason: z.string(), draft: z.string() })).default([]),
+  /** 기록에 없어 작성자에게 확인할 개인 기여·성과 */
+  checks: z.array(z.string()).default([]),
 });
 
 /** 다음 공부 추천 (content/next/<slug>.md) */
@@ -65,6 +69,8 @@ export const nextSchema = z.object({
     .default([]),
   /** 탐구할 연구 질문 */
   questions: z.array(z.string()).default([]),
+  /** 바로 해볼 공부·탐구. 구체적인 행동 하나씩 */
+  actions: z.array(z.string()).default([]),
 });
 
 export const MATCH_KINDS = ['lab', 'company', 'intern'] as const;
@@ -84,9 +90,32 @@ export const matchSchema = z.object({
   sources: z.array(z.object({ label: z.string(), url: z.string().url() })).default([]),
 });
 
+/** 모집 공고 (content/openings/<slug>.md). 본문은 공고 요약 */
+export const openingSchema = z.object({
+  kind: z.enum(OPENING_KINDS),
+  /** 기관·회사 */
+  org: z.string(),
+  title: z.string(),
+  /** 원본 공고 */
+  url: z.string().url(),
+  /** 원문에서 접수 기간을 확인했을 때만 true. false면 기간 안이어도 '모집 중'이 되지 않는다 */
+  verified: z.boolean().default(false),
+  /** 모집 대상 */
+  target: z.string().optional(),
+  /** 자격 요건 */
+  eligibility: z.string().optional(),
+  start: z.coerce.date().optional(),
+  deadline: z.coerce.date().optional(),
+  tags: z.array(z.string()).default([]),
+  /** data/labs.json의 연구실 id */
+  lab: z.string().optional(),
+  created: z.coerce.date(),
+});
+
 export type EntryData = z.infer<typeof entrySchema>;
 export type ApplicationData = z.infer<typeof applicationSchema>;
 export type EssayData = z.infer<typeof essaySchema>;
 export type NextData = z.infer<typeof nextSchema>;
 export type MatchData = z.infer<typeof matchSchema>;
 export type MatchKind = (typeof MATCH_KINDS)[number];
+export type OpeningData = z.infer<typeof openingSchema>;

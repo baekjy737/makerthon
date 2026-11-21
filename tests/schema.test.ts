@@ -42,6 +42,26 @@ describe('공부 기록·추천 (Task 10)', () => {
   });
 });
 
+describe('지원서·다음 공부 확장 (Task 15)', () => {
+  test('essay materials·checks 기본값 []', () => {
+    const e = essaySchema.parse({ question: 'q' });
+    expect(e.materials).toEqual([]);
+    expect(e.checks).toEqual([]);
+  });
+
+  test('essay materials는 {entry, reason, draft}', () => {
+    const m = { entry: 'a', reason: 'r', draft: '초안' };
+    expect(essaySchema.parse({ question: 'q', materials: [m], checks: ['성과 수치'] }).materials).toEqual([m]);
+    expect(() => essaySchema.parse({ question: 'q', materials: [{ entry: 'a', reason: 'r' }] })).toThrow();
+  });
+
+  test('next actions 기본값 []', () => {
+    const base = { topic: 't', created: '2026-11-21', from: ['a'], learned: [], next: ['b'] };
+    expect(nextSchema.parse(base).actions).toEqual([]);
+    expect(nextSchema.parse({ ...base, actions: ['복습'] }).actions).toEqual(['복습']);
+  });
+});
+
 test('기본값 채움', () => {
   const e = entrySchema.parse({ type: 'award', title: '해커톤 2등', date: '2026-05-01', summary: '드론 경로 최적화로 2등' });
   expect(e.public).toBe(true);

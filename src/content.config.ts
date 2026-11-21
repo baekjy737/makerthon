@@ -1,8 +1,8 @@
 import { defineCollection } from 'astro:content';
 import { glob } from 'astro/loaders';
-import { applicationSchema, entrySchema, essaySchema, matchSchema, nextSchema } from './lib/schema';
+import { applicationSchema, entrySchema, essaySchema, matchSchema, nextSchema, openingSchema } from './lib/schema';
 
-export { applicationSchema, entrySchema, essaySchema, matchSchema, nextSchema };
+export { applicationSchema, entrySchema, essaySchema, matchSchema, nextSchema, openingSchema };
 
 const entries = defineCollection({
   loader: glob({ pattern: '**/*.md', base: './content/entries' }),
@@ -35,4 +35,9 @@ const matches = defineCollection({
   schema: matchSchema,
 });
 
-export const collections = { entries, applications, essays, next, matches };
+const openings = defineCollection({
+  loader: glob({ pattern: '*.md', base: './content/openings' }),
+  schema: openingSchema,
+});
+
+export const collections = { entries, applications, essays, next, matches, openings };
