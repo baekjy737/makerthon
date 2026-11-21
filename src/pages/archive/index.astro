@@ -4,11 +4,20 @@ import EntryCard from '../../components/EntryCard.astro';
 import TypeFilter from '../../components/TypeFilter.astro';
 import Base from '../../layouts/Base.astro';
 import { publicOnly, sortByDate } from '../../lib/entries';
-import { ENTRY_TYPES } from '../../lib/types';
+import { groupByTopic } from '../../lib/study';
+import { ENTRY_TYPES, STUDY_TYPES } from '../../lib/types';
 import { withBase } from '../../lib/url';
 
-const entries = sortByDate(publicOnly(await getCollection('entries')));
-const availableTypes = ENTRY_TYPES.filter((type) => entries.some((entry) => entry.data.type === type));
+const all = sortByDate(publicOnly(await getCollection('entries')));
+const isStudy = (type: string) => (STUDY_TYPES as readonly string[]).includes(type);
+const entries = all.filter((entry) => !isStudy(entry.data.type));
+const study = groupByTopic(all.filter((entry) => isStudy(entry.data.type)));
+const studyCount = study.reduce((n, g) => n + g.items.length, 0);
+const tabs = [
+  { key: 'activity', label: '활동', count: entries.length },
+  { key: 'study', label: '공부 기록', count: studyCount },
+] as const;
+const availableTypes = ENTRY_TYPES.filter((type) => !isStudy(type) && entries.some((entry) => entry.data.type === type));
 const byYear = entries.reduce((groups, entry) => {
   const year = entry.data.date.getFullYear();
   const group = groups.get(year) ?? [];
@@ -20,13 +29,34 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
 ---
 
 <Base title="아카이브" description="활동과 성장을 시간순으로 모은 공개 기록입니다.">
-  <div class="archive container" data-filter-scope>
+  <div class="archive container">
     <header class="page-header">
       <p class="eyebrow">ARCHIVE · {entries.length.toString().padStart(2, '0')}</p>
       <h1>기록은 쌓이고,<br /><span>방향이 됩니다.</span></h1>
       <p class="lede">프로젝트부터 연구, 수상, 활동까지 공개한 기록을 시간순으로 모았습니다.</p>
     </header>
 
+    <div class="tablist" role="tablist" aria-label="기록 종류" data-tablist>
+      <span class="tab-pill" aria-hidden="true" data-tab-pill></span>
+      {
+        tabs.map((t, i) => (
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id={`tab-${t.key}`}
+            aria-controls={`tabpanel-${t.key}`}
+            aria-selected={i === 0 ? 'true' : 'false'}
+            tabindex={i === 0 ? 0 : -1}
+          >
+            {t.label}
+            <span class="tab-count">{t.count}</span>
+          </button>
+        ))
+      }
+    </div>
+
+    <div class="tabpanel" role="tabpanel" id="tabpanel-activity" aria-labelledby="tab-activity" data-filter-scope>
     <TypeFilter types={availableTypes} />
 
     {
@@ -50,10 +80,157 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
         <p class="empty">아직 공개된 기록이 없습니다.</p>
       )
     }
+    </div>
+
+    <div class="tabpanel" role="tabpanel" id="tabpanel-study" aria-labelledby="tab-study" hidden>
+      {
+        studyCount > 0 ? (
+          <div class="timeline">
+            {study.map((g) => (
+              <section class="year">
+                <div class="year__label">
+                  <h2>{g.topic}</h2>
+                  <span>{g.items.length.toString().padStart(2, '0')}</span>
+                </div>
+                <div class="year__entries">
+                  {g.items.map((entry) => (
+                    <EntryCard entry={entry} href={withBase(`/portfolio/${entry.id}/`)} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <p class="empty">아직 공부 기록이 없어요. 수업·논문·공부자료를 이슈로 남기면 여기에 주제별로 모여요.</p>
+        )
+      }
+    </div>
   </div>
 </Base>
 
+<script>
+  import { animate } from 'motion';
+
+  const list = document.querySelector<HTMLElement>('[data-tablist]');
+  if (list) {
+    const tabs = [...list.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const pill = list.querySelector<HTMLElement>('[data-tab-pill]')!;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const SPRING = { type: 'spring', bounce: 0, duration: 0.4 } as const;
+
+    // 선택 표시(알약)를 선택된 탭 위치로. 처음과 크기 변경 때는 바로, 탭을 바꿀 때는 스프링으로
+    const placePill = (tab: HTMLElement, instant: boolean) => {
+      const to = { x: tab.offsetLeft, width: tab.offsetWidth };
+      animate(pill, to, instant || reduce.matches ? { duration: 0 } : SPRING);
+    };
+
+    const select = (tab: HTMLButtonElement, focus: boolean) => {
+      for (const t of tabs) {
+        const on = t === tab;
+        t.setAttribute('aria-selected', String(on));
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')!)!.hidden = !on;
+      }
+      placePill(tab, false);
+      if (focus) tab.focus();
+    };
+
+    const current = () => tabs.find((t) => t.getAttribute('aria-selected') === 'true') ?? tabs[0];
+
+    list.addEventListener('click', (ev) => {
+      const tab = (ev.target as HTMLElement).closest<HTMLButtonElement>('[role="tab"]');
+      if (tab) select(tab, false);
+    });
+
+    // 좌우 화살표·Home·End로 탭 이동 (자동 선택)
+    list.addEventListener('keydown', (ev) => {
+      const i = tabs.indexOf(current());
+      const next =
+        ev.key === 'ArrowRight' ? tabs[(i + 1) % tabs.length]
+        : ev.key === 'ArrowLeft' ? tabs[(i - 1 + tabs.length) % tabs.length]
+        : ev.key === 'Home' ? tabs[0]
+        : ev.key === 'End' ? tabs[tabs.length - 1]
+        : null;
+      if (!next) return;
+      ev.preventDefault();
+      select(next, true);
+    });
+
+    placePill(current(), true);
+    list.classList.add('is-ready');
+    new ResizeObserver(() => placePill(current(), true)).observe(list);
+  }
+</script>
+
 <style>
+  .tablist {
+    position: relative;
+    display: inline-flex;
+    margin-top: clamp(2.5rem, 6vw, 4rem);
+    padding: 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--fg) 7%, transparent);
+  }
+  .tab-pill {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 0;
+    border-radius: 999px;
+    background: var(--fg);
+    opacity: 0;
+  }
+  .tablist.is-ready .tab-pill {
+    opacity: 1;
+  }
+  .tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 40px;
+    padding: 0 1.125rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font-ko-bold);
+    font-weight: 700;
+    font-size: 0.9375rem;
+    cursor: pointer;
+    transition:
+      color 150ms ease-out,
+      transform 100ms ease-out;
+  }
+  .tab:hover {
+    color: var(--fg);
+  }
+  .tab[aria-selected='true'] {
+    color: var(--bg);
+  }
+  /* 스크립트가 알약을 놓기 전에는 선택 탭 자체에 배경 */
+  .tablist:not(.is-ready) .tab[aria-selected='true'] {
+    background: var(--fg);
+  }
+  .tab:active {
+    transform: scale(0.97);
+  }
+  #tabpanel-study {
+    padding-top: clamp(2rem, 6vw, 4rem);
+  }
+  .tab-count {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.7;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tab:active {
+      transform: none;
+    }
+  }
+
   .archive {
     padding-block: clamp(4rem, 9vw, 8rem) 8rem;
   }
