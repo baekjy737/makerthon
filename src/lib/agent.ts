@@ -281,6 +281,90 @@ export function createLocalClient(base: string): AgentClient {
   };
 }
 
+/** localStorage: 서버(Vercel + Firebase)로 보낸 최근 요청 */
+export const SERVER_RECENT_KEY = 'agent-recent-server';
+
+/** 서버 모드 첨부 참조 줄. pipeline이 `첨부: upload/<nonce>/<파일>`을 Blob uploads/<nonce>/<파일>에서 읽는다 */
+export const uploadPath = (nonce: string, filename: string) => `uploads/${nonce}/${filename}`;
+
+/**
+ * Vercel 함수(/api/agent/*)와 이야기하는 클라이언트. createClient와 같은 모양이다.
+ * 주인 로그인(Firebase ID 토큰)을 Authorization 헤더로 보내고, 첨부는 Vercel Blob에 브라우저가 직접 올린다.
+ * @param base 사이트 기준 경로(import.meta.env.BASE_URL)
+ */
+export function createServerClient(base: string, getToken: () => Promise<string>): AgentClient {
+  const root = base.endsWith('/') ? base : `${base}/`;
+  async function call<T>(path: string, init: { method?: string; json?: unknown } = {}): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(`${root}api/agent/${path}`, {
+        method: init.method ?? 'GET',
+        headers: {
+          Authorization: `Bearer ${await getToken()}`,
+          ...(init.json !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
+      });
+    } catch (e) {
+      throw new GitHubError(e instanceof Error && e.message === '로그인이 필요해요.' ? e.message : '서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.', 0);
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new GitHubError(data?.error ?? `요청이 실패했어요(${res.status}).`, res.status);
+    return data as T;
+  }
+
+  return {
+    async uploadFiles(files: File[]): Promise<string[]> {
+      for (const f of files) {
+        if (f.size > MAX_UPLOAD_BYTES) throw new Error(`파일은 10MB까지 올릴 수 있어요: ${f.name}`);
+        if (!(UPLOAD_TYPES as readonly string[]).includes(f.type)) throw new Error(`이미지(PNG·JPEG·GIF·WEBP)나 PDF만 올릴 수 있어요: ${f.name}`);
+      }
+      if (files.length === 0) return [];
+      const { upload } = await import('@vercel/blob/client');
+      const nonce = newNonce();
+      const used = new Set<string>();
+      const lines: string[] = [];
+      for (const [i, f] of files.entries()) {
+        let name = safeFilename(f.name, i);
+        if (used.has(name)) name = `${i}-${name}`.slice(0, 100);
+        used.add(name);
+        try {
+          await upload(uploadPath(nonce, name), f, {
+            access: 'public',
+            handleUploadUrl: `${root}api/agent/upload`,
+            headers: { Authorization: `Bearer ${await getToken()}` },
+          });
+        } catch {
+          throw new GitHubError(`첨부를 올리지 못했어요: ${f.name}`, 0);
+        }
+        lines.push(uploadLine(nonce, name));
+      }
+      return lines;
+    },
+    async createIssue(o: IssueOptions) {
+      const r = await call<{ number: number; createdAt: string }>('requests', { method: 'POST', json: { label: o.label, title: o.title, body: o.body } });
+      return { number: r.number, url: '', createdAt: r.createdAt };
+    },
+    async comments(n: number): Promise<Comment[]> {
+      return call<Comment[]>(`requests/${n}/comments`);
+    },
+    async reply(n: number, body: string): Promise<void> {
+      await call(`requests/${n}/comments`, { method: 'POST', json: { body } });
+    },
+  };
+}
+
+/** 서버 AI가 준비돼 있는지(/api/agent/status). 정적 배포(GitHub Pages)면 false */
+export async function serverAgentReady(base: string): Promise<boolean> {
+  const root = base.endsWith('/') ? base : `${base}/`;
+  try {
+    const r = await fetch(`${root}api/agent/status`, { signal: AbortSignal.timeout(3000) });
+    return r.ok && (await r.json())?.ready === true;
+  } catch {
+    return false;
+  }
+}
+
 /** localStorage 읽기·쓰기. 시크릿 창 등에서 막혀 있으면 읽기는 null(토큰 없음으로 취급), 쓰기는 false */
 export function readLocal(key: string): string | null {
   try {

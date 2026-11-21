@@ -1,4 +1,4 @@
-# Vercel + Supabase 이전: 인수인계와 결정 사항
+# Vercel + Firebase 이전: 인수인계와 결정 사항
 
 - 날짜: 2026-11-21
 - 작성: Claude-1(이전 리더). 이 문서부터 리더는 **Claude-4**다.
@@ -9,7 +9,7 @@
 | 항목 | 결정 |
 |---|---|
 | 호스팅 | Vercel 웹사이트 |
-| DB | **Supabase** (Postgres). Firebase는 쓰지 않는다 |
+| DB | ~~Supabase~~ → **Firebase**(Firestore + Firebase Auth). 2026-11-21 사용자 결정으로 바꿨다. 아래 "결정" 참고 |
 | 배포 단위 | **사람마다 배포하는 템플릿.** 학생 한 명이 자기 Vercel 프로젝트와 자기 Supabase 프로젝트를 하나씩 가진다. 여러 학생이 함께 쓰는 공용 사이트는 만들지 않는다 |
 
 ### 템플릿 방식이라서 생기는 일
@@ -46,3 +46,50 @@
 
 - 기존 Global Constraints(한국어 UI, 비공개 항목은 어디에도 안 나옴, AI는 사실을 지어내지 않음, 스프링은 오버슈트 없음, reduced-motion이면 페이드)는 그대로 유지한다.
 - Review Focus 중 "다른 저장소 이름으로 배포"(1)는 Vercel에서는 의미가 줄어든다. 나머지(긴 메모 URL, localStorage 차단, AI 스키마 위반, 비공개 누출)는 저장소가 Supabase로 바뀌어도 같은 기준으로 테스트한다.
+
+## 결정 (2026-11-21, 사용자) — 위 내용보다 우선한다
+
+| 항목 | 결정 |
+|---|---|
+| DB·로그인 | **Firebase**: Firestore(콘텐츠·요청 대화), Firebase Auth(주인 Google 로그인). Supabase는 쓰지 않는다. 위 표의 "Supabase 테이블", "RLS"는 각각 Firestore 컬렉션, Firestore 보안 규칙으로 읽는다 |
+| 파일 | **Vercel Blob.** Firebase Storage는 새 프로젝트에서 Blaze 요금제(카드 등록)가 필요해서 쓰지 않는다 |
+| 호스팅 | Vercel 유지 |
+| AI 실행 | **기본은 Vercel 서버 함수에서 Anthropic API 키.** **발표 데모에서는 이 컴퓨터의 Claude Code**(`npm run agent:local`)로 바로 처리한다. 두 방식 모두 결과를 Firestore에 쓴다 |
+| 프레임워크 | Astro 유지 (`@astrojs/vercel` 어댑터) |
+| Task 22 | 대화창 UI(`AgentDialog`)를 재사용하고 뒤쪽만 GitHub API에서 서버 API로 바꾼다. GitHub PAT는 없앤다 |
+
+## 구조
+
+```
+브라우저 ─(주인 Google 로그인: Firebase Auth ID 토큰)─▶ /api/agent/* (Vercel 함수, firebase-admin)
+                                                          │
+        ┌─────────────────────────────────────────────────┤
+        ▼                                                 ▼
+ Firestore requests/{n}/comments              AI 파이프라인 (scripts/agent/pipeline.mjs)
+                                               1. Firestore 문서 → 임시 작업 폴더(content/**.md, data/, CLAUDE.md, 스킬)
+                                               2. AI 실행: Anthropic API(도구: 파일 읽기·찾기·web_fetch) 또는 claude -p
+                                               3. ai-content.mjs 검증(기존 규칙 그대로, 작업 폴더 기준)
+                                               4. 바뀐 파일 → Firestore, 첨부 → Vercel Blob, Vercel 배포 훅 호출
+사이트 페이지 ◀── 빌드 때 Firestore 로더(로그인 없는 웹 SDK = 공개 문서만) ◀── 배포 훅으로 다시 빌드
+```
+
+- **페이지는 정적 빌드를 유지한다.** `content.config.ts`의 로더만 바꾼다. Firebase 환경 변수가 있으면 Firestore에서, 없으면 지금처럼 `content/`에서 읽는다(로컬 개발·테스트·템플릿 샘플용). 빌드는 로그인 없이 읽으므로 보안 규칙상 비공개 문서는 빌드 결과에 들어가지 않는다.
+- 콘텐츠가 바뀌면 파이프라인이 Vercel 배포 훅을 불러 다시 빌드한다(약 1분). 개발 서버에서는 로더가 `.content-stamp` 파일을 지켜보다가 다시 읽는다.
+- 쓰기는 전부 서버(firebase-admin 서비스 계정)에서만 한다. 보안 규칙은 공개 문서 읽기만 허용하고 클라이언트 쓰기는 모두 막는다. 주인 확인은 ID 토큰의 이메일과 `OWNER_EMAIL` 비교다.
+- 콘텐츠 컬렉션은 지금 컬렉션 이름 그대로(`entries`, `applications`, `essays`, `next`, `matches`, `openings`). 문서는 `{ id, data(frontmatter), body(Markdown), public }`이고, 문서 ID는 `id`를 `encodeURIComponent`한 값이다(`/`가 들어간 ID 때문). zod 스키마는 로더에서 그대로 쓴다.
+- 첨부: 공개 첨부는 Vercel Blob `archive/<항목>/<파일>`(공개 URL). 대화창 업로드는 브라우저가 Blob 클라이언트 업로드로 `uploads/<nonce>/<파일>`에 올리고, 참조 줄 `첨부: upload/<nonce>/<파일명>`은 그대로 쓴다.
+
+## 이번 작업 범위
+
+1. Firestore 보안 규칙·인덱스, 시드 스크립트(`content/`·`public/archive/` → Firestore·Blob)
+2. Astro Vercel 어댑터, Firestore 콘텐츠 로더(파일 대체 포함)
+3. `ai-content.mjs`를 작업 폴더 기준으로도 부를 수 있게(CLI·테스트는 그대로)
+4. AI 파이프라인 + `/api/agent/*` + 주인 로그인, 대화창 재연결
+5. 로컬 실행기(`agent:local`)가 같은 파이프라인으로 Claude Code를 쓰도록
+6. README 셋업 단계 다시 쓰기
+
+## 다음으로 미룬 것
+
+- localStorage(메모·공부 계획·지원서 편집본·프로필 수정)의 Firestore 동기화
+- 주간 공고 수집(`collect-openings.yml`)을 Vercel Cron으로 옮기기
+- `.github/workflows/ai.yml`·이슈 템플릿 삭제(이전이 끝나고 확인한 뒤)

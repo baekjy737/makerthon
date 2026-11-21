@@ -13,6 +13,7 @@ import { loadProfile } from '../../lib/profile';
 import { publicOnly } from '../../lib/entries';
 import { TYPE_LABELS } from '../../lib/types';
 import { withBase } from '../../lib/url';
+import { attachmentUrl } from '../../lib/attachment';
 
 export async function getStaticPaths() {
   const entries = publicOnly(await getCollection('entries'));
@@ -38,7 +39,7 @@ const inFolder = existsSync(folder)
 const memoFiles: MemoFile[] = [
   { ref: entryPath, label: '항목 본문', kind: 'entry' },
   ...[...new Set([...data.attachments, ...inFolder])].map(
-    (a): MemoFile => ({ ref: `public/${a}`, label: a.split('/').pop()!, kind: 'file', href: withBase(a) }),
+    (a): MemoFile => ({ ref: `public/${a}`, label: a.split('/').pop()!, kind: 'file', href: attachmentUrl(a) }),
   ),
   ...data.links.map((l): MemoFile => ({ ref: l.url, label: l.label, kind: 'link', href: l.url })),
 ];
@@ -180,7 +181,7 @@ const fileName = (path: string) => {
           <h2 id="attachments-title">첨부</h2>
           <div class="attachments__grid">
             {data.attachments.map((attachment, index) => {
-              const href = withBase(attachment);
+              const href = attachmentUrl(attachment);
               return isImage(attachment) ? (
                 <a class="attachment attachment--image" href={href} target="_blank" rel="noreferrer">
                   <img src={href} alt={`${data.title} 첨부 이미지 ${index + 1}`} loading="lazy" />

@@ -1,5 +1,6 @@
 // @ts-check
 import fs from 'node:fs';
+import vercel from '@astrojs/vercel';
 import { AstroPWAIntegration } from '@vite-pwa/astro';
 import { defineConfig } from 'astro/config';
 import { parse as parseYaml } from 'yaml';
@@ -40,6 +41,24 @@ function readProfileForManifest() {
   }
 }
 
+// 서버 경로(/api)가 있으면 정적 파일은 dist/client로 나가는데, PWA는 sw.js·workbox를 dist/에 만들고
+// Vercel 어댑터는 그보다 먼저 dist/client를 .vercel/output/static으로 복사한다. 그래서 두 곳에 따라 복사한다
+const copyServiceWorker = {
+  name: 'copy-service-worker-to-vercel',
+  hooks: {
+    'astro:build:done': () => {
+      const from = 'dist';
+      if (!fs.existsSync('dist/client')) return;
+      for (const name of fs.readdirSync(from)) {
+        if (!/^(sw\.js|workbox-[\w-]+\.js)(\.map)?$/.test(name)) continue;
+        for (const to of ['dist/client', '.vercel/output/static']) {
+          if (fs.existsSync(to)) fs.copyFileSync(`${from}/${name}`, `${to}/${name}`);
+        }
+      }
+    },
+  },
+};
+
 const base = normalizeBase(process.env.BASE_PATH);
 const escapedBaseNoSlash = base.slice(0, -1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const pagePattern =
@@ -52,6 +71,15 @@ const profile = readProfileForManifest();
 // https://astro.build/config
 export default defineConfig({
   base,
+  // 페이지는 정적 빌드, /api/*만 Vercel 함수(prerender = false)
+  adapter: vercel({
+    // AI 파이프라인이 작업 폴더를 만들 때 읽는 파일
+    includeFiles: [
+      'CLAUDE.md',
+      ...['archive', 'essay', 'job-analysis', 'opening', 'recommend'].map((s) => `.claude/skills/${s}/SKILL.md`),
+      'data/labs.json', 'data/interns.json', 'data/courses.json', 'data/research-internships.json'],
+    maxDuration: 300,
+  }),
   ...(site ? { site } : {}),
   integrations: [
     AstroPWAIntegration({
@@ -101,5 +129,6 @@ export default defineConfig({
         ],
       },
     }),
+    copyServiceWorker,
   ],
 });

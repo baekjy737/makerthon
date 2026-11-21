@@ -1,7 +1,7 @@
 // 스키마는 astro:content 없이 import할 수 있도록 여기 둔다(Vitest용).
 // src/content.config.ts가 이 파일을 import해 collection을 만든다.
 import { z } from 'astro/zod';
-import { ENTRY_TYPES, OPENING_KINDS } from './types';
+import { ENTRY_TYPES, OPENING_KINDS } from './types.ts';
 
 export const entrySchema = z.object({
   type: z.enum(ENTRY_TYPES),

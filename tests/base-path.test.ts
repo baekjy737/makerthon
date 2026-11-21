@@ -4,7 +4,8 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const DIST = path.join(ROOT, 'dist');
+// 서버 경로(/api)가 있어 정적 파일은 dist/client로 나간다(Vercel 어댑터)
+const DIST = path.join(ROOT, 'dist', 'client');
 // Vitest가 process.env에 넣는 BASE_URL=/ 가 빌드의 import.meta.env.BASE_URL을 덮으므로 빼고 넘긴다.
 const { BASE_URL, MODE, DEV, PROD, SSR, ...BUILD_ENV } = process.env;
 
