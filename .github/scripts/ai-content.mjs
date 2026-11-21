@@ -59,6 +59,25 @@ function attachmentUrls(issue) {
   return urls;
 }
 
+const uploadLinePattern = /^첨부: (upload\/([a-z0-9]{16})\/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99}))[ \t]*\r?$/gmu;
+
+/**
+ * 사이트 대화창이 이슈 본문·댓글에 넣는 업로드 브랜치 첨부 참조(`첨부: upload/<nonce>/<filename>`)를 읽는다.
+ * 줄 전체가 이 형식이어야 하고, `..`가 들어간 파일명은 거른다. 같은 참조는 한 번만.
+ * @param {{ title: string, body: string, comments: { body: string }[] }} issue
+ * @returns {{ branch: string, path: string, ref: string }[]}
+ */
+export function uploadRefs(issue) {
+  const refs = new Map();
+  for (const text of [issue.title, issue.body, ...issue.comments.map(comment => comment.body)]) {
+    for (const [, ref, nonce, path] of (text ?? '').matchAll(uploadLinePattern)) {
+      if (path.includes('..') || refs.has(ref)) continue;
+      refs.set(ref, { branch: 'upload/' + nonce, path, ref });
+    }
+  }
+  return [...refs.values()];
+}
+
 function extension(bytes) {
   const header = bytes.toString('latin1', 0, 12);
   if (header.startsWith('\x89PNG\r\n\x1a\n')) return 'png';
@@ -98,16 +117,30 @@ async function download(source) {
       continue;
     }
     check(response.ok && response.body, 'GitHub 첨부를 읽을 수 없습니다.');
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.length;
-      check(size <= maxBytes, '첨부가 GitHub 문서 파일 크기 제한을 초과합니다.');
-      chunks.push(chunk);
-    }
-    return Buffer.concat(chunks, size);
+    return readLimited(response.body);
   }
   throw new Error('첨부 리디렉션이 너무 많습니다.');
+}
+
+async function readLimited(body) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of body) {
+    size += chunk.length;
+    check(size <= maxBytes, '첨부가 GitHub 문서 파일 크기 제한을 초과합니다.');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, size);
+}
+
+/** 자기 저장소(GH_REPO)의 업로드 브랜치에서 파일 원본을 워크플로 토큰으로 받는다. 리디렉션은 따라가지 않는다. */
+async function downloadUpload({ branch, path }) {
+  const url = 'https://api.github.com/repos/' + process.env.GH_REPO + '/contents/' + path + '?ref=' + encodeURIComponent(branch);
+  const headers = { Accept: 'application/vnd.github.raw', 'X-GitHub-Api-Version': '2022-11-28' };
+  if (process.env.GH_TOKEN) headers.Authorization = 'Bearer ' + process.env.GH_TOKEN;
+  const response = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(60000) });
+  check(response.ok && response.body, '업로드한 첨부를 읽을 수 없습니다.');
+  return readLimited(response.body);
 }
 
 function signedImageUrl(original, signedImages) {
@@ -142,6 +175,26 @@ async function prepare() {
       break;
     }
     manifest.push({ name, url });
+  }
+  // 사이트 대화창이 올린 업로드 브랜치 첨부. 저장소 이름이 이상하면 모두 건너뛴다.
+  const refs = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(process.env.GH_REPO ?? '') ? uploadRefs(issue) : [];
+  for (const ref of refs) {
+    let name = null;
+    try {
+      const bytes = await downloadUpload(ref);
+      name = filename(bytes);
+      const path = join(input, name);
+      checkFile(path);
+      writeFileSync(path, bytes);
+    } catch {
+      name = null;
+    }
+    manifest.push({ name, url: ref.ref });
+  }
+  // 반영이 끝나면 ai.yml이 이 브랜치들을 지운다(작업 폴더 밖 파일이라 브랜치를 바꿔도 남는다)
+  if (process.env.AI_UPLOAD_BRANCHES_FILE) {
+    const branches = [...new Set(refs.map(ref => ref.branch))];
+    writeFileSync(process.env.AI_UPLOAD_BRANCHES_FILE, branches.map(branch => branch + '\n').join(''));
   }
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 }

@@ -114,6 +114,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           AI_SIGNED_IMAGES_FILE: ${{ !inputs.collect_openings && format('{0}/archive-signed.json', runner.temp) || '' }}
+          AI_UPLOAD_BRANCHES_FILE: ${{ runner.temp }}/upload-branches.txt
         run: node .github/scripts/ai-content.mjs prepare
 
       - name: 기록·공고·자소서·추천 작성
@@ -172,7 +173,8 @@ jobs:
             esac
             printf '%s\n' '<!-- archive-question -->' > "$RUNNER_TEMP/reply.md"
           else
-            : > "$RUNNER_TEMP/reply.md"
+            # 사이트 대화창이 "반영할 새 내용 없음"을 완료로 알아보는 표시
+            printf '%s\n' '<!-- archive-unchanged -->' > "$RUNNER_TEMP/reply.md"
           fi
           jq -er '.message' "$AI_RESULT_FILE" >> "$RUNNER_TEMP/reply.md"
           gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/reply.md"
@@ -281,6 +283,19 @@ jobs:
           else
             gh issue comment "$ISSUE" --body "PR #$PR 병합으로 기록을 반영했어요. $message"
           fi
+
+      - name: 사이트에서 올린 첨부 브랜치 정리
+        # 병합됐거나 이미 반영된 경우. 질문·실패로 끝나면 재실행을 위해 남긴다.
+        if: github.event.issue.number && steps.result.outputs.status == 'ready'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          list="$RUNNER_TEMP/upload-branches.txt"
+          [[ -f "$list" ]] || exit 0
+          while read -r branch; do
+            [[ "$branch" =~ ^upload/[a-z0-9]{16}$ ]] && gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$branch" || true
+          done < "$list"
 
       - name: 추가할 공고가 없는 주간 수집 결과
         if: inputs.collect_openings && steps.publish.outputs.pr == ''
