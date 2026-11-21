@@ -70,6 +70,16 @@ Task 1이 끝나야 대부분의 작업을 시작할 수 있다. 그래서 두 �
 | 21 링크드인·리멤버 내보내기 | Claude-2 | Task 15를 끝낸 뒤 이어서 |
 | 15b 연구인턴 공고 합치기(`fromResearchProgram`·`loadOpenings`에 `research-internships.json` 51건) | Claude-3 | 지금. 계획 Task 15의 `fromResearchProgram` 항목대로 `src/lib/openings.ts`·`tests/openings.test.ts`를 고친다 |
 
+### 4단계: 웹에서 AI 요청하기 (Task 22)
+
+- 사양은 `docs/superpowers/specs/2026-11-21-web-agent-design.md`, 계획은 `docs/superpowers/plans/2026-11-21-web-agent.md`(Task 22.1~22.3)다.
+- AI 실행은 지금의 `ai.yml`·구독 토큰 그대로 두고, 사이트 안 대화창에서 GitHub API(PAT)로 이슈·댓글·첨부를 다룬다.
+- 이 Task에 한해 Claude-4가 `.github/workflows/ai.yml`·`.github/scripts/ai-content.mjs`(Task 8 소유)와 `src/layouts/Base.astro`(Task 2 소유)를 고친다.
+
+| Task | 담당 | 시작 조건 |
+|---|---|---|
+| 22 웹에서 AI 요청하기(대화창·업로드 브랜치·정리 단계) | Claude-4 | 지금 |
+
 ### 디자인 개선 (GPT-3 고정)
 
 - **작업 전에 반드시 `.claude/skills/apple-design/SKILL.md`를 끝까지 읽는다.** 디자인 판단은 이 파일을 기준으로 하고, 색·폰트는 계획의 기본값과 `profile.yml`이 우선한다.
