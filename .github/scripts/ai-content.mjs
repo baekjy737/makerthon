@@ -1,13 +1,26 @@
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const input = '.archive-input';
 const manifestPath = input + '/attachments.json';
 const slug = '[a-z0-9]+(?:-[a-z0-9]+)*';
-const entryPattern = new RegExp('^content/entries/(' + slug + '(?:/' + slug + ')*)\\.md$');
+const entryPattern = new RegExp('^content/entries/' + slug + '(?:/' + slug + ')*\\.md$');
 const applicationPattern = new RegExp('^content/applications/' + slug + '/(?:index|essay-[1-9][0-9]*)\\.md$');
+const nextPattern = new RegExp('^content/next/' + slug + '\\.md$');
+const matchPattern = new RegExp('^content/matches/' + slug + '\\.md$');
 const maxBytes = 25 * 1024 * 1024;
+
+/** @param {string} path @returns {'entry' | 'application' | 'next' | 'match' | null} */
+export function contentPath(path) {
+  if (typeof path !== 'string') return null;
+  if (entryPattern.test(path)) return 'entry';
+  if (applicationPattern.test(path)) return 'application';
+  if (nextPattern.test(path)) return 'next';
+  if (matchPattern.test(path)) return 'match';
+  return null;
+}
 
 function check(condition, message) {
   if (!condition) throw new Error(message);
@@ -150,11 +163,88 @@ function checkMarkdown(node) {
   for (const child of node.children ?? []) checkMarkdown(child);
 }
 
+function checkMatch(data, labs, interns) {
+  let records;
+  switch (data.kind) {
+    case 'lab': records = labs.filter(lab => lab.id === data.target); break;
+    case 'intern': records = interns.filter(intern => intern.id === data.target); break;
+    case 'company': records = interns.filter(intern => intern.company === data.target); break;
+    default: throw new Error('알 수 없는 기회 종류입니다.');
+  }
+  check(records.length > 0, '추천 대상이 연구실·인턴 데이터에 없습니다.');
+  const urls = records.map(record => data.kind === 'lab' ? record.homepage : record.url);
+  for (const source of data.sources ?? []) {
+    checkUrl(source.url);
+    check(typeof source.url === 'string' && urls.includes(source.url), '추천 대상의 원본 자료 링크를 확인할 수 없습니다.');
+  }
+}
+
+function recommendationKey(directory, data) {
+  return directory === 'content/next'
+    ? JSON.stringify(['topic', data.topic])
+    : JSON.stringify(['match', data.kind, data.target]);
+}
+
+// Before writing, use the proposed files. After a rebase, read the merged files from disk.
+async function verifyRecommendations(files, pending = new Map()) {
+  const paths = files.map(file => file.path).filter(path => ['next', 'match'].includes(contentPath(path)));
+  if (paths.length === 0) return;
+  const nextCount = paths.filter(path => nextPattern.test(path)).length;
+  check(nextCount <= 3 && paths.length - nextCount <= 5, '한 번에 다음 공부 3개, 기회 5개까지 추천할 수 있습니다.');
+  const { parse } = await import('yaml');
+  function readData(path) {
+    checkFile(path);
+    check(pending.has(path) || existsSync(path), '추천 파일 또는 근거가 된 공개 항목이 없습니다.');
+    return frontmatter(pending.get(path) ?? readFileSync(path, 'utf8'), parse).data;
+  }
+
+  const labs = readJson('data/labs.json');
+  const interns = readJson('data/interns.json');
+  const courses = readJson('data/courses.json');
+  const courseNames = new Set([...courses.map(course => course.name), ...labs.flatMap(lab => lab.courses)]);
+  const evidenceIds = new Set();
+  const proposedKeys = new Set();
+  for (const path of paths) {
+    const data = readData(path);
+    const key = recommendationKey(dirname(path), data);
+    check(!proposedKeys.has(key), '중복 추천입니다. 같은 주제나 대상은 한 파일에 기록해 주세요.');
+    proposedKeys.add(key);
+    check(Array.isArray(data.from) && data.from.length > 0, '추천에 근거가 된 공개 항목이 필요합니다.');
+    for (const id of data.from) {
+      check(typeof id === 'string' && entryPattern.test('content/entries/' + id + '.md'), '추천 근거는 공개 항목 ID여야 합니다.');
+      evidenceIds.add(id);
+    }
+    if (contentPath(path) === 'match') {
+      checkMatch(data, labs, interns);
+    } else {
+      for (const resource of data.resources ?? []) {
+        if (resource.url !== undefined) checkUrl(resource.url);
+        if (resource.course !== undefined) check(courseNames.has(resource.course), '추천 과목을 과목표나 연구실 데이터에서 찾을 수 없습니다.');
+      }
+    }
+  }
+  for (const directory of new Set(paths.map(dirname))) {
+    if (!existsSync(directory)) continue;
+    for (const file of readdirSync(directory, { withFileTypes: true })) {
+      if (!file.isFile() || !file.name.endsWith('.md')) continue;
+      const path = directory + '/' + file.name;
+      if (paths.includes(path)) continue;
+      const key = recommendationKey(directory, readData(path));
+      check(!proposedKeys.has(key), `중복 추천입니다. 기존 파일 ${path}를 갱신해 주세요.`);
+    }
+  }
+  for (const id of evidenceIds) {
+    const data = readData('content/entries/' + id + '.md');
+    check(data.public === true || data.public === undefined, '추천 근거에는 공개 항목만 사용할 수 있습니다.');
+  }
+}
+
 async function apply() {
   const result = readJson(process.env.AI_RESULT_FILE);
   check(['ready', 'question', 'unchanged'].includes(result.status) && typeof result.message === 'string', '잘못된 처리 결과입니다.');
   if (result.status !== 'ready') return;
   check(Array.isArray(result.files) && Array.isArray(result.attachments), '변경 파일 또는 첨부 목록이 없습니다.');
+  const { route } = readJson(input + '/issue.json');
   checkFile(manifestPath);
   const available = new Set(readJson(manifestPath).map(item => item.name).filter(Boolean));
   const { parse } = await import('yaml');
@@ -165,23 +255,27 @@ async function apply() {
 
   for (const { path, markdown } of result.files) {
     check(typeof path === 'string' && typeof markdown === 'string' && markdown.trim(), '잘못된 Markdown 변경입니다.');
-    const entry = entryPattern.exec(path);
-    check(entry || applicationPattern.test(path), '콘텐츠 범위 밖의 파일 경로입니다.');
+    const kind = contentPath(path);
+    check(kind, '콘텐츠 범위 밖의 파일 경로입니다.');
+    const recommendation = kind === 'next' || kind === 'match';
+    check(route !== 'recommend' || recommendation, '추천 요청은 추천 파일만 수정할 수 있습니다.');
+    check(!recommendation || ['archive', 'memo', 'recommend'].includes(route), '이 요청은 추천 파일을 수정할 수 없습니다.');
     checkFile(path);
     check(!changes.has(path), '중복된 변경 경로입니다.');
     const { data, body } = frontmatter(markdown, parse);
     checkMarkdown(markdownToMdast(body));
     if (data.url !== undefined) checkUrl(data.url);
     for (const link of data.links ?? []) checkUrl(link.url);
-    if (entry) {
+    if (kind === 'entry') {
+      const id = path.slice('content/entries/'.length, -'.md'.length);
       const old = existsSync(path) ? frontmatter(readFileSync(path, 'utf8'), parse).data : null;
-      check(old || !entry[1].includes('/'), '새 활동은 entries 바로 아래에 작성해야 합니다.');
+      check(old || !id.includes('/'), '새 활동은 entries 바로 아래에 작성해야 합니다.');
       check(data.public === undefined || typeof data.public === 'boolean', '잘못된 공개 설정입니다.');
       check(data.attachments === undefined || Array.isArray(data.attachments)
         && data.attachments.every(path => typeof path === 'string'), '잘못된 첨부 목록입니다.');
       check(!old || (old.public ?? true) === (data.public ?? true), '기존 항목의 공개 설정을 바꿀 수 없습니다.');
-      entries.set(entry[1], { data, verifiedAttachments: new Set(old?.attachments ?? []) });
-    } else if (/\/essay-\d+\.md$/.test(path) && data.limit !== undefined) {
+      entries.set(id, { data, verifiedAttachments: new Set(old?.attachments ?? []) });
+    } else if (kind === 'application' && /\/essay-\d+\.md$/.test(path) && data.limit !== undefined) {
       check(Number.isSafeInteger(data.limit) && data.limit > 0, '자소서 글자 수 제한은 양의 정수여야 합니다.');
       const draft = body.replace(/\r\n/g, '\n').replace(/^\n+|\n+$/g, '');
       const count = Array.from(draft).length;
@@ -189,6 +283,8 @@ async function apply() {
     }
     changes.set(path, markdown);
   }
+
+  await verifyRecommendations(result.files, changes);
 
   for (const { name, entry } of result.attachments) {
     check(typeof name === 'string' && /^[a-f0-9]{64}\.(?:png|jpg|gif|webp|pdf)$/.test(name) && available.has(name), '준비된 첨부가 아닙니다.');
@@ -215,6 +311,9 @@ async function apply() {
   }
 }
 
-if (process.argv[2] === 'prepare') await prepare();
-else if (process.argv[2] === 'apply') await apply();
-else throw new Error('prepare 또는 apply를 지정하세요.');
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv[2] === 'prepare') await prepare();
+  else if (process.argv[2] === 'apply') await apply();
+  else if (process.argv[2] === 'verify-recommendations') await verifyRecommendations(readJson(process.env.AI_RESULT_FILE).files);
+  else throw new Error('prepare, apply, verify-recommendations 중 하나를 지정하세요.');
+}

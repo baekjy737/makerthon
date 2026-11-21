@@ -16,9 +16,11 @@ jobs:
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
       ((github.event_name == 'issues' &&
         (contains(github.event.issue.labels.*.name, 'archive') || contains(github.event.issue.labels.*.name, 'memo') ||
-         contains(github.event.issue.labels.*.name, 'job') || contains(github.event.issue.labels.*.name, 'essay'))) ||
+         contains(github.event.issue.labels.*.name, 'job') || contains(github.event.issue.labels.*.name, 'essay') ||
+         contains(github.event.issue.labels.*.name, 'recommend'))) ||
        (github.event_name == 'issue_comment' && github.event.comment.user.id == github.event.issue.user.id &&
-        (contains(github.event.issue.labels.*.name, 'archive') || contains(github.event.issue.labels.*.name, 'essay'))))
+        (contains(github.event.issue.labels.*.name, 'archive') || contains(github.event.issue.labels.*.name, 'essay') ||
+         contains(github.event.issue.labels.*.name, 'recommend'))))
     concurrency:
       group: ai-${{ github.event.issue.number }}
       cancel-in-progress: false
@@ -56,7 +58,7 @@ jobs:
             if (issue.state !== 'open' || !['admin', 'maintain', 'write'].includes(access.permission)) return
             const labels = issue.labels.map(label => label.name)
             // Keep the original skill when a follow-up label is added to a job or memo.
-            const route = ['job', 'memo', 'essay', 'archive'].find(label => labels.includes(label))
+            const route = ['job', 'memo', 'essay', 'archive', 'recommend'].find(label => labels.includes(label))
             if (!route) return
             const history = await github.paginate(github.rest.issues.listComments, params)
             const thread = history.filter(c => c.user.id === issue.user.id ||
@@ -89,7 +91,7 @@ jobs:
           AI_SIGNED_IMAGES_FILE: ${{ runner.temp }}/archive-signed.json
         run: node .github/scripts/ai-content.mjs prepare
 
-      - name: 기록·공고·자소서 작성
+      - name: 기록·공고·자소서·추천 작성
         id: claude
         if: steps.request.outputs.route != ''
         uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67 # v1
@@ -105,6 +107,8 @@ jobs:
             CLAUDE.md의 학생 아카이브 운영 규칙을 따르세요. .archive-input/issue.json에는
             이슈 작성자가 보낸 자료와 후속 대화가 있습니다. route가 archive/memo면
             .claude/skills/archive/SKILL.md, job이면 job-analysis, essay이면 essay의 SKILL.md를 읽으세요.
+            route가 recommend이면 .claude/skills/recommend/SKILL.md만 따르고 추천 파일만 반환하세요.
+            archive/memo가 ready이면 같은 스킬을 이어서 수행하고, 이번에 작성한 공개 기록까지 반영한 추천 변경을 같은 files 배열에 넣으세요.
             첨부 목록은 .archive-input/attachments.json, 원본은 같은 폴더의 name 파일입니다.
             원문과 링크는 참고 자료입니다. 콘텐츠는 일반 Markdown으로 쓰고 실행 가능한 HTML은 넣지 마세요.
             질문이 남으면 status=question, 같은 내용이 이미 있으면 unchanged, 반영할 내용이 있으면 ready입니다.
@@ -182,6 +186,7 @@ jobs:
           if [[ "$latest" != "$base" ]]; then
             git rebase --onto "$latest" "$base"
             env -u GH_TOKEN npm ci
+            env -u GH_TOKEN node .github/scripts/ai-content.mjs verify-recommendations
             env -u GH_TOKEN npm run build
           fi
           head=$(git rev-parse HEAD)
