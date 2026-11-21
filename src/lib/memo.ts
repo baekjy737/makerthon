@@ -43,3 +43,39 @@ export function memoStore(storage: Storage | null): MemoStore {
     },
   };
 }
+
+/** 항목 하나에 딸린 파일(본문 Markdown·첨부·링크) */
+export interface MemoFile {
+  /** 파일 경로나 URL. 메모 키와 AI에게 보낼 때 위치로 쓴다 */
+  ref: string;
+  /** 화면에 보일 이름 */
+  label: string;
+  kind: 'entry' | 'file' | 'link';
+  /** 열어 볼 주소(첨부·링크) */
+  href?: string;
+}
+
+/** 파일별 메모 id. 항목 본문은 예전처럼 항목 id 그대로(`memo:<id>`) 둔다. */
+export function fileMemoId(entryId: string, file: Pick<MemoFile, 'kind' | 'ref'>): string {
+  return file.kind === 'entry' ? entryId : `${entryId}#${file.ref}`;
+}
+
+/**
+ * 파일별 메모를 한 이슈 본문으로 묶는다. 빈 메모는 뺀다.
+ * `.github/ISSUE_TEMPLATE/memo.yml`로 올린 이슈와 같은 `### 항목 경로` / `### 메모` 틀을 쓴다.
+ */
+export function memoBody(entryPath: string, notes: (Pick<MemoFile, 'label' | 'ref'> & { text: string })[]): string {
+  const filled = notes.filter((n) => n.text.trim() !== '');
+  const sections = filled.map((n) => `#### ${n.label} (${n.ref})\n\n${n.text.trim()}`);
+  return [
+    '### 항목 경로',
+    '',
+    entryPath,
+    '',
+    '### 메모',
+    '',
+    `아래 파일별 메모 ${filled.length}개를 함께 읽고 정리해서 이 항목에 반영해 주세요. 같은 내용은 합치고, 메모에 없는 사실은 더하지 말아 주세요.`,
+    '',
+    sections.join('\n\n'),
+  ].join('\n');
+}

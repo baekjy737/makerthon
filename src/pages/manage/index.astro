@@ -5,6 +5,10 @@ import MemoPanel from '../../components/MemoPanel.astro';
 import { loadProfile } from '../../lib/profile';
 import { issueUrl } from '../../lib/issue';
 import { TYPE_LABELS, TYPE_ORDER } from '../../lib/types';
+import { withBase } from '../../lib/url';
+import type { MemoFile } from '../../lib/memo';
+import { existsSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 // 관리 페이지는 비공개 항목까지 전부 보여 준다(publicOnly를 거치지 않는다). 대신 noindex.
 const profile = loadProfile();
@@ -14,6 +18,25 @@ const entries = (await getCollection('entries')).sort((a, b) => b.data.date.getT
 const counts = TYPE_ORDER.map((type) => ({ type, label: TYPE_LABELS[type], n: entries.filter((e) => e.data.type === type).length })).filter(
   (c) => c.n > 0,
 );
+
+type Entry = (typeof entries)[number];
+const entryPath = (e: Entry) => e.filePath ?? `content/entries/${e.id}.md`;
+
+// 항목에 딸린 파일: 본문 Markdown + 첨부(frontmatter attachments와 public/archive/<id>/ 폴더) + 자료 링크
+function filesOf(e: Entry): MemoFile[] {
+  const folder = resolve(process.cwd(), 'public/archive', e.id);
+  const inFolder = existsSync(folder)
+    ? readdirSync(folder, { withFileTypes: true })
+        .filter((d) => d.isFile() && !d.name.startsWith('.'))
+        .map((d) => `archive/${e.id}/${d.name}`)
+    : [];
+  const attachments = [...new Set([...e.data.attachments, ...inFolder])];
+  return [
+    { ref: entryPath(e), label: '항목 본문', kind: 'entry' },
+    ...attachments.map((a): MemoFile => ({ ref: `public/${a}`, label: a.split('/').pop()!, kind: 'file', href: withBase(a) })),
+    ...e.data.links.map((l): MemoFile => ({ ref: l.url, label: l.label, kind: 'link', href: l.url })),
+  ];
+}
 
 const ym = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 const period = (start: Date, end?: Date) => (end ? `${ym(start)} – ${ym(end)}` : ym(start));
@@ -54,7 +77,7 @@ const actions = [
       <div>
         <p class="eyebrow">MANAGE</p>
         <h1>관리</h1>
-        <p class="lead">비공개 항목까지 모두 보여요. 항목을 누르면 메모를 남기고 AI에게 보낼 수 있어요.</p>
+        <p class="lead">비공개 항목까지 모두 보여요. 항목을 누르면 파일별로 메모를 남기고, 모아서 AI에게 정리를 맡길 수 있어요.</p>
       </div>
       <div class="actions">
         {
@@ -94,7 +117,8 @@ const actions = [
                 data-id={e.id}
                 data-title={e.data.title}
                 data-type-label={TYPE_LABELS[e.data.type]}
-                data-path={e.filePath ?? `content/entries/${e.id}.md`}
+                data-path={entryPath(e)}
+                data-files={JSON.stringify(filesOf(e))}
                 aria-haspopup="dialog"
               >
                 <span class="date">{period(e.data.date, e.data.end)}</span>
@@ -106,6 +130,7 @@ const actions = [
                   <span class="sub">
                     {TYPE_LABELS[e.data.type]}
                     {e.data.org && <> · {e.data.org}</>}
+                    {' · '}파일 {filesOf(e).length}개
                   </span>
                 </span>
                 <span class="memo-dot" data-memo-dot title="메모 있음" hidden />

@@ -1,5 +1,5 @@
-import { expect, test } from 'vitest';
-import { memoStore } from '../src/lib/memo';
+import { describe, expect, test } from 'vitest';
+import { fileMemoId, memoBody, memoStore } from '../src/lib/memo';
 
 function mapStorage() {
   const s = new Map<string, string>();
@@ -51,4 +51,25 @@ test('확인용 키를 남기지 않음', () => {
   const { s, storage } = mapStorage();
   memoStore(storage);
   expect(s.size).toBe(0);
+});
+
+describe('파일별 메모', () => {
+  test('항목 본문은 예전 키, 나머지는 #ref를 붙인 키', () => {
+    expect(fileMemoId('a', { kind: 'entry', ref: 'content/entries/a.md' })).toBe('a');
+    expect(fileMemoId('a', { kind: 'file', ref: 'public/archive/a/x.pdf' })).toBe('a#public/archive/a/x.pdf');
+    expect(fileMemoId('a', { kind: 'link', ref: 'https://e.com' })).toBe('a#https://e.com');
+  });
+
+  test('파일 메모들을 한 본문으로 묶고 빈 메모는 뺌', () => {
+    const body = memoBody('content/entries/a.md', [
+      { label: '항목 본문', ref: 'content/entries/a.md', text: '팀장 맡음' },
+      { label: '발표 자료', ref: 'https://e.com/s', text: '   ' },
+      { label: 'poster.pdf', ref: 'public/archive/a/poster.pdf', text: ' 포스터 1등 \n' },
+    ]);
+    expect(body.startsWith('### 항목 경로\n\ncontent/entries/a.md\n\n### 메모\n\n')).toBe(true);
+    expect(body).toContain('메모 2개');
+    expect(body).toContain('#### 항목 본문 (content/entries/a.md)\n\n팀장 맡음');
+    expect(body).toContain('#### poster.pdf (public/archive/a/poster.pdf)\n\n포스터 1등');
+    expect(body).not.toContain('발표 자료');
+  });
 });
