@@ -5,7 +5,7 @@ import OpeningCard from '../../components/OpeningCard.astro';
 import { boardGroups } from '../../lib/board';
 import { interns } from '../../lib/data';
 import { issueUrl } from '../../lib/issue';
-import { loadOpenings } from '../../lib/openings';
+import { loadOpenings, researchPrograms } from '../../lib/openings';
 import { loadProfile } from '../../lib/profile';
 import { withBase } from '../../lib/url';
 
@@ -13,9 +13,10 @@ const applications = await getCollection('applications');
 applications.sort((a, b) => b.data.created.getTime() - a.data.created.getTime());
 const profile = loadProfile();
 
-// 모집 공고: content/openings + data/interns.json. 상태는 빌드 시점 기준(페이지에서 방문일 기준으로 다시 계산)
+// 모집 공고: content/openings + data/interns.json + data/research-internships.json.
+// 상태는 빌드 시점 기준(페이지에서 방문일 기준으로 다시 계산)
 const now = new Date();
-const groups = boardGroups(loadOpenings(await getCollection('openings'), interns), now);
+const groups = boardGroups(loadOpenings(await getCollection('openings'), interns, researchPrograms), now);
 const initial = groups.find((g) => g.active.length > 0) ?? groups.find((g) => g.closed.length > 0) ?? groups[0];
 
 // 버튼 본문은 각 이슈 템플릿(.github/ISSUE_TEMPLATE/*.yml)이 만드는 본문과 같은 틀로 맞춘다.

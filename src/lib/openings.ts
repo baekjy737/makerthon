@@ -1,3 +1,4 @@
+import researchJson from '../../data/research-internships.json';
 import type { Intern } from './data';
 import { seoulDay } from './recommend';
 import type { OpeningData } from './schema';
@@ -27,10 +28,60 @@ export type Opening = {
   eligibility?: string;
   start?: Date;
   deadline?: Date;
+  /** 마감일을 날짜로 알 수 없을 때 원문 표기(예: "상시 문의", "2026 동계") */
+  deadlineText?: string;
   tags: string[];
   /** data/labs.json의 연구실 id */
   lab?: string;
 };
+
+/** data/research-internships.json의 programs 한 건(대학원·출연연 연구 인턴). 필드 그대로 */
+export type ResearchProgram = {
+  id: string;
+  /** 대학원, 연구기관 등 */
+  orgType: string;
+  org: string;
+  program: string;
+  /** "기계·재료·로봇"처럼 가운뎃점으로 나열 */
+  field: string;
+  /** 타교 지원 가능 여부(가능, 불가(학부), 학교제한 …) */
+  crossSchool: string;
+  eligibility: string;
+  /** YYYY-MM 또는 YYYY-MM-DD */
+  start: string;
+  /** YYYY-MM-DD. 없으면 deadlineText가 있다 */
+  deadline?: string;
+  deadlineText?: string;
+  period: string;
+  apply: string;
+  note: string;
+  url: string;
+};
+
+/** data/research-internships.json의 topics 한 건(연구실별 인턴 주제). 필드 그대로 */
+export type ResearchTopic = {
+  id: string;
+  org: string;
+  program: string;
+  division: string;
+  professor: string;
+  lab: string;
+  topic: string;
+  category: string;
+  crossSchool: string;
+  eligibility: string;
+  requirements: string;
+  deadline: string;
+  url: string;
+};
+
+type ResearchInternships = { source: string; note: string; programs: ResearchProgram[]; topics: ResearchTopic[] };
+const research = researchJson as ResearchInternships;
+
+/** 연구인턴 공고 51건(사용자 제공 스냅샷 2026-11-21) */
+export const researchPrograms: ResearchProgram[] = research.programs;
+/** 연구실별 인턴 주제(RECOMMEND 연구실 탐색용) */
+export const researchTopics: ResearchTopic[] = research.topics;
 
 export type OpeningStatus = 'open' | 'closed' | 'unverified';
 
@@ -83,11 +134,41 @@ export function fromIntern(i: Intern): Opening {
   };
 }
 
+/** YYYY-MM이면 그 달 1일, YYYY-MM-DD면 그 날 */
+function parseMonthOrDay(s: string | undefined): Date | undefined {
+  return s && /^\d{4}-\d{2}$/.test(s) ? parseDay(`${s}-01`) : parseDay(s);
+}
+
+/**
+ * data/research-internships.json 연구인턴 한 건을 대학원 연구실 인턴 공고로 옮긴다.
+ * 스냅샷이라 마감일이 날짜로 있을 때만 verified로 본다. 날짜가 없으면 deadlineText를 그대로 보인다.
+ */
+export function fromResearchProgram(p: ResearchProgram): Opening {
+  const deadline = parseDay(p.deadline);
+  return {
+    id: `rp-${p.id}`,
+    kind: 'lab-intern',
+    org: p.org,
+    title: p.program,
+    url: p.url,
+    verified: deadline !== undefined,
+    target: `${p.eligibility} (타교 지원: ${p.crossSchool})`,
+    eligibility: p.note || undefined,
+    start: parseMonthOrDay(p.start),
+    deadline,
+    deadlineText: deadline ? undefined : p.deadlineText,
+    tags: p.field
+      .split('·')
+      .map((t) => t.replace(/\s*등$/, '').trim())
+      .filter(Boolean),
+  };
+}
+
 /** content/openings 컬렉션 항목과 같은 모양(CollectionEntry<'openings'>를 그대로 넘기면 된다) */
 type OpeningEntry = { id: string; data: OpeningData };
 
-/** 두 출처를 합쳐 마감일 오름차순으로 돌려준다. 마감일이 없는 공고는 뒤로 간다 */
-export function loadOpenings(collection: OpeningEntry[], interns: Intern[]): Opening[] {
+/** 세 출처(content/openings, 기업 인턴, 연구인턴)를 합쳐 마감일 오름차순으로 돌려준다. 마감일이 없는 공고는 뒤로 간다 */
+export function loadOpenings(collection: OpeningEntry[], interns: Intern[], programs: ResearchProgram[]): Opening[] {
   const fromContent = collection.map(({ id, data }): Opening => ({
     id,
     kind: data.kind,
@@ -102,7 +183,7 @@ export function loadOpenings(collection: OpeningEntry[], interns: Intern[]): Ope
     tags: data.tags,
     lab: data.lab,
   }));
-  const all = [...fromContent, ...interns.map(fromIntern)];
+  const all = [...fromContent, ...interns.map(fromIntern), ...programs.map(fromResearchProgram)];
   return all.sort((a, b) => {
     if (!a.deadline || !b.deadline) return a.deadline ? -1 : b.deadline ? 1 : 0;
     return a.deadline.getTime() - b.deadline.getTime();
