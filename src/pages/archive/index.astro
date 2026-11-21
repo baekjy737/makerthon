@@ -19,11 +19,22 @@ const STUDY_SECTIONS = [
 const studyTypes: readonly string[] = STUDY_SECTIONS.flatMap((s) => s.types);
 const all = sortByDate(publicOnly(await getCollection('entries')));
 const isStudy = (type: string) => studyTypes.includes(type);
+const groupByYear = (items: typeof all) => {
+  const groups = new Map<number, typeof all>();
+  for (const item of items) {
+    const year = item.data.date.getUTCFullYear();
+    const group = groups.get(year) ?? [];
+    group.push(item);
+    groups.set(year, group);
+  }
+  return Array.from(groups, ([year, items]) => ({ year, items }));
+};
 const entries = all.filter((entry) => !isStudy(entry.data.type));
 const studySections = STUDY_SECTIONS.map((s) => ({
   label: s.label,
-  groups: groupByTopic(all.filter((entry) => (s.types as readonly string[]).includes(entry.data.type))),
-})).filter((s) => s.groups.length > 0);
+  years: groupByYear(all.filter((entry) => (s.types as readonly string[]).includes(entry.data.type)))
+    .map(({ year, items }) => ({ year, topics: groupByTopic(items) })),
+})).filter((s) => s.years.length > 0);
 const studyCount = all.length - entries.length;
 const cardHref = (id: string) => withBase(`/portfolio/${id}/?from=archive`);
 const uploadUrl = issueUrl(profile.repo, {
@@ -36,14 +47,7 @@ const tabs = [
   { key: 'study', label: '공부 기록', count: studyCount },
 ] as const;
 const availableTypes = ENTRY_TYPES.filter((type) => !isStudy(type) && entries.some((entry) => entry.data.type === type));
-const byYear = entries.reduce((groups, entry) => {
-  const year = entry.data.date.getFullYear();
-  const group = groups.get(year) ?? [];
-  group.push(entry);
-  groups.set(year, group);
-  return groups;
-}, new Map<number, typeof entries>());
-const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
+const yearGroups = groupByYear(entries);
 ---
 
 <Base title="아카이브" description="활동과 성장을 시간순으로 모은 공개 기록입니다.">
@@ -111,15 +115,21 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
             <section class="study-section" aria-labelledby={`study-${sec.label}`}>
               <h2 class="study-title" id={`study-${sec.label}`}>{sec.label}</h2>
               <div class="timeline">
-                {sec.groups.map((g) => (
-                  <section class="year">
+                {sec.years.map(({ year, topics }) => (
+                  <section class="year" aria-labelledby={`study-${sec.label}-${year}`}>
                     <div class="year__label">
-                      <h3>{g.topic}</h3>
-                      <span>{g.items.length.toString().padStart(2, '0')}</span>
+                      <h3 id={`study-${sec.label}-${year}`}>{year}</h3>
                     </div>
-                    <div class="year__entries">
-                      {g.items.map((entry) => (
-                        <EntryCard entry={entry} href={cardHref(entry.id)} />
+                    <div class="study-topics">
+                      {topics.map(({ topic, items }) => (
+                        <div>
+                          <h4 class="study-topic">{topic}</h4>
+                          <div class="year__entries">
+                            {items.map((entry) => (
+                              <EntryCard entry={entry} href={cardHref(entry.id)} />
+                            ))}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </section>
@@ -386,6 +396,18 @@ const yearGroups = Array.from(byYear, ([year, items]) => ({ year, items }));
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
+  }
+
+  .study-topics {
+    display: grid;
+    gap: 1.25rem;
+    min-width: 0;
+  }
+
+  .study-topic {
+    margin: 0 0 0.65rem;
+    color: var(--muted);
+    font-size: 0.95rem;
   }
 
   .empty {

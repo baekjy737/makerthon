@@ -27,7 +27,7 @@ const builtStatus = intern ? recruitStatus({ start: intern.start, deadline: inte
 
 {
   from.length > 0 && (
-    <article class="rc" data-plan-item={`match:${item.id}`}>
+    <article class="rc lift-card" data-plan-item={`match:${item.id}`}>
       <div class="rc-top">
         <p class="rc-eyebrow">{KIND_LABELS[data.kind]}</p>
         <p class="score" aria-label={`적합도 ${data.score}점`}>
@@ -101,11 +101,7 @@ const builtStatus = intern ? recruitStatus({ start: intern.start, deadline: inte
     min-width: 0;
     height: 100%;
     padding: clamp(1.25rem, 3vw, 1.75rem);
-    border: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
     border-radius: 1.25rem;
-    background:
-      linear-gradient(145deg, color-mix(in srgb, var(--fg) 5%, transparent), transparent 58%),
-      color-mix(in srgb, var(--bg) 94%, var(--fg));
   }
   .rc[hidden] {
     display: none;

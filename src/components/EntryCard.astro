@@ -21,7 +21,7 @@ const affiliation = [data.org, data.role].filter(Boolean).join(' · ');
 ---
 
 <Element
-  class:list={['entry-card', { 'entry-card--link': Boolean(href) }]}
+  class:list={['entry-card', 'lift-card', { 'entry-card--link': Boolean(href) }]}
   data-type={data.type}
   href={href}
 >
@@ -60,24 +60,8 @@ const affiliation = [data.org, data.role].filter(Boolean).join(' · ');
     min-width: 0;
     height: 100%;
     padding: clamp(1.25rem, 3vw, 1.75rem);
-    border: 1px solid color-mix(in srgb, var(--accent) 72%, var(--bg));
     border-radius: 1.25rem;
-    background: color-mix(in srgb, var(--bg) 97%, var(--fg));
     overflow: hidden;
-    transition:
-      transform 240ms var(--ease-out),
-      box-shadow 240ms var(--ease-out);
-  }
-
-  @media (hover: hover) {
-    .entry-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 4px 8px 16px color-mix(in srgb, var(--accent) 15%, transparent);
-    }
-  }
-
-  .entry-card--link:focus-visible {
-    box-shadow: 4px 8px 16px color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   .entry-card--link:active {
@@ -162,12 +146,10 @@ const affiliation = [data.org, data.role].filter(Boolean).join(' · ');
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .entry-card,
     .entry-card__arrow {
       transition: none;
     }
 
-    .entry-card:hover,
     .entry-card--link:active,
     .entry-card--link:hover .entry-card__arrow {
       transform: none;
