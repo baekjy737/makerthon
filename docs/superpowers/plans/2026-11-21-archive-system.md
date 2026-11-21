@@ -17,6 +17,7 @@
 - 내부 링크·에셋은 모두 `import.meta.env.BASE_URL` 기준(템플릿마다 저장소 이름이 다르다). 하드코딩된 `href="/..."` 금지.
 - `public: false` 항목은 어떤 페이지·통계·이력서·맞춤 이력서에도 나오지 않는다.
 - 기본 테마: `bg #0b0b0c`, `fg #f2f2f0`, `muted #8a8a8f`, `accent #3b82f6`(파랑). 기본 폰트: 한글 `NanumSquareNeo`(Naver CSS `https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css`, 굵기는 패밀리 이름으로: `NanumSquareNeoLight/NanumSquareNeo/NanumSquareNeoBold/NanumSquareNeoExtraBold/NanumSquareNeoHeavy`), 영문 디스플레이 `Anton`(Google Fonts).
+- 디자인 방향성은 저장소에 들어 있는 `.claude/skills/apple-design/SKILL.md`를 따른다. UI를 만드는 작업(Task 2~6)은 시작 전에 이 파일을 읽는다. 단, 색·폰트는 이 계획의 기본값과 `profile.yml`이 우선한다.
 - 움직임: 기본 스프링은 오버슈트 없음(`bounce: 0, duration: 0.4`). `prefers-reduced-motion: reduce`면 페이드만.
 - AI는 사실(날짜·수치·역할·수상명)을 지어내지 않는다. 모르면 이슈 댓글로 묻고 해당 필드는 비운다.
 - 새 의존성은 Tech Stack에 적힌 것만.
