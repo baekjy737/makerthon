@@ -1,0 +1,362 @@
+---
+// 오른쪽 메모 패널. [data-memo-open] 버튼(data-id, data-title, data-type-label, data-path)을 누르면 열린다.
+// 스크림 없음: 패널이 열려 있어도 목록은 계속 조작할 수 있다.
+interface Props {
+  /** owner/name */
+  repo: string;
+}
+const { repo } = Astro.props;
+---
+
+<aside class="memo" role="dialog" aria-modal="false" aria-labelledby="memo-title" data-memo-panel data-repo={repo} inert>
+  <div class="memo-inner">
+    <header class="memo-head">
+      <div class="memo-meta">
+        <p class="memo-type" data-memo-type></p>
+        <h2 id="memo-title" data-memo-title></h2>
+      </div>
+      <button type="button" class="memo-close" data-memo-close aria-label="메모 닫기">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+        </svg>
+      </button>
+    </header>
+
+    <label class="memo-label" for="memo-text">메모</label>
+    <textarea
+      id="memo-text"
+      class="memo-text"
+      data-memo-text
+      placeholder="떠오른 내용, 고칠 점, 자소서에 쓸 만한 에피소드 등을 적어 두세요."
+      aria-describedby="memo-status"></textarea>
+
+    <p class="memo-status" id="memo-status" data-memo-status aria-live="polite"></p>
+    <p class="memo-warn" data-memo-warn hidden>이 브라우저에는 저장할 수 없어요. 보내기 전에 내용을 복사해 두세요.</p>
+
+    <div class="memo-foot">
+      <button type="button" class="memo-send" data-memo-send>AI에게 보내기</button>
+      <p class="memo-hint">GitHub 이슈 작성 화면이 새 탭으로 열려요. 제출하면 AI가 이 항목에 메모를 반영해요.</p>
+    </div>
+  </div>
+</aside>
+
+<script>
+  import { animate, type AnimationPlaybackControls } from 'motion';
+  import { issueUrl, TRUNCATED_NOTE } from '../lib/issue';
+  import { memoStore } from '../lib/memo';
+
+  const panel = document.querySelector<HTMLElement>('[data-memo-panel]')!;
+  const titleEl = panel.querySelector<HTMLElement>('[data-memo-title]')!;
+  const typeEl = panel.querySelector<HTMLElement>('[data-memo-type]')!;
+  const text = panel.querySelector<HTMLTextAreaElement>('[data-memo-text]')!;
+  const status = panel.querySelector<HTMLElement>('[data-memo-status]')!;
+  const warn = panel.querySelector<HTMLElement>('[data-memo-warn]')!;
+  const send = panel.querySelector<HTMLButtonElement>('[data-memo-send]')!;
+  const repo = panel.dataset.repo!;
+
+  // 시크릿 창 등에서는 localStorage 접근 자체가 throw할 수 있다
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  const store = memoStore(storage);
+  warn.hidden = store.ok;
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const SPRING = { type: 'spring', bounce: 0, duration: 0.4 } as const;
+
+  let current: { id: string; title: string; path: string } | null = null;
+  let trigger: HTMLButtonElement | null = null;
+  let open = false;
+  let anim: AnimationPlaybackControls | null = null;
+  let saveTimer: number | undefined;
+
+  // 닫힌 위치를 motion에 먼저 알려 두면, 이후 애니메이션은 항상 현재 화면 위치에서 시작한다(중간에 방향 전환 가능).
+  animate(panel, { x: '100%', opacity: 1 }, { duration: 0 });
+
+  function rowFor(id: string) {
+    return document.querySelector<HTMLButtonElement>(`[data-memo-open][data-id="${CSS.escape(id)}"]`);
+  }
+
+  function markDot(id: string, has: boolean) {
+    const dot = rowFor(id)?.querySelector<HTMLElement>('[data-memo-dot]');
+    if (dot) dot.hidden = !has;
+  }
+
+  function flush() {
+    window.clearTimeout(saveTimer);
+    saveTimer = undefined;
+    if (!current) return;
+    store.set(current.id, text.value);
+    markDot(current.id, store.ok && text.value.trim() !== '');
+    if (store.ok) status.textContent = text.value ? '이 브라우저에 저장됐어요' : '';
+  }
+
+  function updateSend() {
+    send.disabled = text.value.trim() === '';
+  }
+
+  function load(btn: HTMLButtonElement) {
+    if (current) flush();
+    current = { id: btn.dataset.id!, title: btn.dataset.title!, path: btn.dataset.path! };
+    titleEl.textContent = current.title;
+    typeEl.textContent = btn.dataset.typeLabel ?? '';
+    text.value = store.get(current.id);
+    status.textContent = '';
+    updateSend();
+    trigger?.setAttribute('aria-expanded', 'false');
+    trigger = btn;
+    btn.setAttribute('aria-expanded', 'true');
+  }
+
+  function show() {
+    open = true;
+    panel.inert = false;
+    panel.classList.add('is-open');
+    anim?.stop();
+    anim = reduce.matches
+      ? animate(panel, { x: 0, opacity: [0, 1] }, { duration: 0.2, x: { duration: 0 } })
+      : animate(panel, { x: 0, opacity: 1 }, SPRING);
+    text.focus({ preventScroll: true });
+  }
+
+  function hide() {
+    if (!open) return;
+    flush();
+    open = false;
+    panel.inert = true;
+    trigger?.setAttribute('aria-expanded', 'false');
+    anim?.stop();
+    anim = reduce.matches
+      ? animate(panel, { opacity: 0 }, { duration: 0.2 })
+      : animate(panel, { x: '100%' }, SPRING);
+    anim.then(() => {
+      // 그 사이 다시 열렸으면 건드리지 않는다
+      if (!open) {
+        panel.classList.remove('is-open');
+        animate(panel, { x: '100%', opacity: 1 }, { duration: 0 });
+      }
+    });
+    trigger?.focus({ preventScroll: true });
+  }
+
+  document.addEventListener('click', (ev) => {
+    const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-memo-open]');
+    if (!btn) return;
+    if (open && current?.id === btn.dataset.id) {
+      hide();
+      return;
+    }
+    load(btn);
+    show();
+  });
+
+  panel.querySelector('[data-memo-close]')!.addEventListener('click', hide);
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && open) {
+      ev.preventDefault();
+      hide();
+    }
+  });
+
+  text.addEventListener('input', () => {
+    updateSend();
+    if (!store.ok) return;
+    status.textContent = '';
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(flush, 300);
+  });
+
+  send.addEventListener('click', () => {
+    if (!current) return;
+    flush();
+    const body = `항목: ${current.path}\n\n${text.value}`;
+    const url = issueUrl(repo, { label: 'memo', title: `[메모] ${current.title}`, body });
+    const cut = url.endsWith(encodeURIComponent(TRUNCATED_NOTE)) && !body.endsWith(TRUNCATED_NOTE);
+    window.open(url, '_blank', 'noopener');
+    status.textContent = cut ? '메모가 길어서 앞부분만 담았어요. 열린 이슈에 나머지를 붙여 넣어 주세요.' : 'GitHub에서 이슈를 제출하면 반영돼요.';
+  });
+
+  // 페이지를 떠나기 직전 디바운스 중인 내용을 저장
+  window.addEventListener('pagehide', flush);
+
+  // 저장된 메모가 있는 항목에 점 표시
+  if (store.ok) {
+    document.querySelectorAll<HTMLButtonElement>('[data-memo-open]').forEach((b) => {
+      if (store.get(b.dataset.id!).trim()) markDot(b.dataset.id!, true);
+    });
+  }
+</script>
+
+<style>
+  .memo {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    width: min(420px, 100vw);
+    visibility: hidden;
+    transform: translateX(100%);
+    will-change: transform;
+  }
+  .memo.is-open {
+    visibility: visible;
+  }
+
+  /* 막지 않는 평행 패널: 스크림 없이 반투명 재질 + 그림자로 띄운다 */
+  .memo-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: max(1.25rem, env(safe-area-inset-top)) 1.5rem max(1.25rem, env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border-left: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+    box-shadow: -24px 0 60px -20px rgb(0 0 0 / 0.55);
+  }
+
+  .memo-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .memo-meta {
+    min-width: 0;
+  }
+  .memo-type {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin-bottom: 0.375rem;
+  }
+  .memo-head h2 {
+    font-size: 1.25rem;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+  }
+  .memo-close {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin: -0.375rem -0.5rem 0 0;
+    border: 0;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+    cursor: pointer;
+    transition:
+      transform 100ms ease-out,
+      background-color 150ms ease-out;
+  }
+  .memo-close:hover {
+    background: color-mix(in srgb, var(--fg) 14%, transparent);
+  }
+  .memo-close:active {
+    transform: scale(0.94);
+  }
+
+  .memo-label {
+    font-size: 0.8125rem;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
+  .memo-text {
+    flex: 1;
+    min-height: 10rem;
+    width: 100%;
+    resize: none;
+    padding: 0.875rem 1rem;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
+    line-height: 1.65;
+    transition: border-color 150ms ease-out;
+  }
+  .memo-text:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .memo-text::placeholder {
+    color: color-mix(in srgb, var(--muted) 80%, transparent);
+  }
+
+  .memo-status {
+    min-height: 1.25rem;
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .memo-warn {
+    margin-top: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 10px;
+    background: color-mix(in srgb, #f59e0b 14%, transparent);
+    color: var(--fg);
+    font-size: 0.875rem;
+  }
+  .memo-warn[hidden] {
+    display: none;
+  }
+
+  .memo-foot {
+    margin-top: 1rem;
+  }
+  .memo-send {
+    width: 100%;
+    min-height: 3rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-family: var(--font-ko-bold);
+    cursor: pointer;
+    transition:
+      transform 100ms ease-out,
+      opacity 150ms ease-out;
+  }
+  .memo-send:active {
+    transform: scale(0.97);
+  }
+  .memo-send:disabled {
+    opacity: 0.4;
+    cursor: default;
+    transform: none;
+  }
+  .memo-hint {
+    margin-top: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .memo-inner {
+      background: var(--bg);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  @media (prefers-contrast: more) {
+    .memo-inner {
+      background: var(--bg);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      border-left-color: var(--fg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .memo-close:active,
+    .memo-send:active {
+      transform: none;
+    }
+  }
+</style>
