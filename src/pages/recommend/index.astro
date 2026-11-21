@@ -1,11 +1,41 @@
 ---
+import { getCollection } from 'astro:content';
+import LabCard from '../../components/LabCard.astro';
 import Base from '../../layouts/Base.astro';
-import RecommendPreview from '../../components/RecommendPreview.astro';
+import { findTarget, interns, labs } from '../../lib/data';
 import { issueUrl } from '../../lib/issue';
+import { matchLabs, matchTopics } from '../../lib/labMatch';
+import { loadOpenings, openingStatus, researchPrograms, researchTopics } from '../../lib/openings';
 import { loadProfile } from '../../lib/profile';
+import { resolveFrom } from '../../lib/recommend';
+import { withBase } from '../../lib/url';
 
 const profile = loadProfile();
-// recommend 이슈 템플릿(.github/ISSUE_TEMPLATE/recommend.yml)과 같은 틀
+const entries = await getCollection('entries');
+const nextItems = (await getCollection('next'))
+  .filter((item) => resolveFrom(item.data.from, entries).length > 0)
+  .sort((a, b) => b.data.created.getTime() - a.data.created.getTime())
+  .slice(0, 3);
+const matchItems = (await getCollection('matches'))
+  .filter((item) => resolveFrom(item.data.from, entries).length > 0)
+  .sort((a, b) => b.data.score - a.data.score)
+  .slice(0, 3);
+
+const openings = loadOpenings(await getCollection('openings'), interns, researchPrograms);
+const openByLab = new Map(
+  openings
+    .filter((opening) => opening.lab && openingStatus(opening, new Date()) === 'open')
+    .map((opening) => [opening.lab!, opening]),
+);
+const labMatches = matchLabs(labs, profile.interests);
+const topicMatches = matchTopics(researchTopics, profile.interests);
+const explorerCount = labMatches.length + topicMatches.length;
+const organizations = [
+  ...(labMatches.length > 0 ? ['DGIST'] : []),
+  ...new Set(topicMatches.map(({ topic }) => topic.org)),
+];
+const interests = [...new Set(profile.interests.map((interest) => interest.trim()).filter(Boolean))];
+
 const recommendUrl = issueUrl(profile.repo, {
   label: 'recommend',
   title: '[추천] 다음 공부와 진로',
@@ -14,74 +44,184 @@ const recommendUrl = issueUrl(profile.repo, {
 ---
 
 <Base title="추천" description="관심사와 공부 기록을 바탕으로 다음 공부와 연구실을 탐색합니다.">
-  <section class="container recommend" aria-labelledby="recommend-title">
-    <h1 id="recommend-title">추천</h1>
-    <p class="lede">관심 분야와 공부 기록을 근거로 다음에 공부할 것과 맞는 연구실·기회를 보여 줘요.</p>
-    <div class="actions">
-      <a class="action primary" href={recommendUrl} target="_blank" rel="noopener">
-        추천 받기
-        <span class="visually-hidden">(GitHub 이슈 작성 화면이 새 탭으로 열려요)</span>
-      </a>
+  <header class="hero container" aria-labelledby="recommend-title">
+    <div>
+      <p class="eyebrow">RECOMMEND</p>
+      <h1 id="recommend-title">배운 것에서<br />다음 가능성으로.</h1>
+      <p class="lede">공개한 공부 기록과 관심 분야를 근거로, 다음 공부와 맞닿는 연구실·기회를 한 흐름으로 보여 줘요.</p>
     </div>
+    <a class="issue-button" href={recommendUrl} target="_blank" rel="noopener">
+      추천 받기 <span aria-hidden="true">↗</span>
+      <span class="visually-hidden">(GitHub 이슈 작성 화면이 새 탭으로 열려요)</span>
+    </a>
+  </header>
+
+  <section class="section container" aria-labelledby="next-title">
+    <div class="section-head">
+      <div><p class="eyebrow">NEXT STUDY</p><h2 id="next-title">다음 공부</h2></div>
+      <a class="section-link" href={withBase('/next/')}>전체 보기 <span aria-hidden="true">→</span></a>
+    </div>
+
+    {nextItems.length === 0 ? <p class="empty">공개 공부 기록이 쌓이면 다음 공부 흐름을 제안해요.</p> : (
+      <div class="next-list">
+        {nextItems.map((item) => {
+          const from = resolveFrom(item.data.from, entries);
+          const actions = [...item.data.actions, ...item.data.questions].slice(0, 3);
+          return (
+            <article class="next-card">
+              <div class="next-card__head">
+                <h3><a href={withBase(`/next/${item.id}/`)}>{item.data.topic}</a></h3>
+                <a class="detail-link" href={withBase(`/next/${item.id}/`)}>자세히 <span aria-hidden="true">→</span></a>
+              </div>
+              <div class="learning-flow">
+                <div class="flow-step"><p><span>01</span> 공부한 것</p><ul>{item.data.learned.slice(0, 3).map((text) => <li>{text}</li>)}</ul></div>
+                <span class="flow-arrow" aria-hidden="true">→</span>
+                <div class="flow-step flow-step--accent"><p><span>02</span> 다음 개념</p><ul>{item.data.next.slice(0, 3).map((text) => <li>{text}</li>)}</ul></div>
+                <span class="flow-arrow" aria-hidden="true">→</span>
+                <div class="flow-step"><p><span>03</span> 바로 해볼 것</p><ul>{actions.map((text) => <li>{text}</li>)}</ul></div>
+              </div>
+              <div class="grounding"><span>출발한 기록</span>{from.map((entry) => <a href={withBase(`/portfolio/${entry.id}/`)}>{entry.data.title}</a>)}</div>
+            </article>
+          );
+        })}
+      </div>
+    )}
   </section>
-  <RecommendPreview />
+
+  <section class="section section--tint" aria-labelledby="match-title"><div class="container">
+    <div class="section-head">
+      <div><p class="eyebrow">AI MATCH</p><h2 id="match-title">AI 추천 연구실·기회</h2><p class="section-copy">적합도는 모집 상태와 별개이며, 공개 기록에서 확인할 수 있는 근거만 사용해요.</p></div>
+      <a class="section-link" href={withBase('/match/')}>전체 보기 <span aria-hidden="true">→</span></a>
+    </div>
+    {matchItems.length === 0 ? <p class="empty">아직 근거가 있는 추천이 없어요. 기록을 남기고 추천을 요청해 보세요.</p> : (
+      <div class="match-grid">
+        {matchItems.map((item) => {
+          const from = resolveFrom(item.data.from, entries);
+          const target = findTarget(item.data.kind, item.data.target);
+          return (
+            <article class="match-card">
+              <div class="match-card__meta"><span>{item.data.kind === 'lab' ? '연구실' : item.data.kind === 'intern' ? '인턴' : '기업'}</span><strong aria-label={`적합도 ${item.data.score}점`}>{item.data.score}<small>/100</small></strong></div>
+              <h3><a href={withBase(`/match/${item.id}/`)}>{target?.title ?? item.data.target}</a></h3>
+              <p class="match-card__reason">{item.data.reason}</p>
+              {item.data.sources.length > 0 && <div class="sources"><span>먼저 읽을 자료</span>{item.data.sources.slice(0, 2).map((source) => <a href={source.url} target="_blank" rel="noopener">{source.label} <span aria-hidden="true">↗</span></a>)}</div>}
+              <div class="grounding"><span>근거 기록</span>{from.map((entry) => <a href={withBase(`/portfolio/${entry.id}/`)}>{entry.data.title}</a>)}</div>
+              <a class="detail-link match-card__detail" href={withBase(`/match/${item.id}/`)}>추천 자세히 <span aria-hidden="true">→</span></a>
+            </article>
+          );
+        })}
+      </div>
+    )}
+  </div></section>
+
+  <section class="section container lab-explorer" aria-labelledby="labs-title">
+    <div class="section-head section-head--labs">
+      <div><p class="eyebrow">LAB EXPLORER</p><h2 id="labs-title">연구실 탐색</h2><p class="section-copy">DGIST 연구실과 다른 기관의 연구 인턴 주제를 관심사에 맞춰 모았어요. 모집 공고가 없어도 탐색할 수 있어요.</p></div>
+      <p class="lab-count" aria-live="polite"><strong data-visible-count>{explorerCount}</strong>개 연구실·주제</p>
+    </div>
+    <div class="explorer-filters">
+      {organizations.length > 0 && <div class="filter-group"><p>기관</p><div class="interest-filter" aria-label="기관으로 연구실 필터"><button type="button" class="active" data-org-filter="all" aria-pressed="true">전체 기관</button>{organizations.map((org) => <button type="button" data-org-filter={org} aria-pressed="false">{org}</button>)}</div></div>}
+      {interests.length > 0 && <div class="filter-group"><p>관심사</p><div class="interest-filter" aria-label="관심사로 연구실 필터"><button type="button" class="active" data-interest="all" aria-pressed="true">전체 관심사</button>{interests.map((interest) => <button type="button" data-interest={interest} aria-pressed="false">{interest}</button>)}</div></div>}
+    </div>
+    {explorerCount === 0 ? <p class="empty">현재 관심사와 정확히 맞는 연구실을 찾지 못했어요. profile.yml의 interests를 더 짧은 키워드로 적어 보세요.</p> : <div class="lab-grid" data-lab-grid>{labMatches.map(({ lab, hits }) => <LabCard lab={lab} hits={hits} opening={openByLab.get(lab.id)} />)}{topicMatches.map(({ topic, hits }) => <LabCard topic={topic} hits={hits} />)}</div>}
+    <p class="empty filter-empty" data-filter-empty hidden>이 관심사와 맞는 연구실이 없어요.</p>
+  </section>
 </Base>
 
+<script>
+  const interestButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-interest]')];
+  const orgButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-org-filter]')];
+  const cards = [...document.querySelectorAll<HTMLElement>('[data-lab-card]')];
+  const count = document.querySelector<HTMLElement>('[data-visible-count]');
+  const empty = document.querySelector<HTMLElement>('[data-filter-empty]');
+  let selectedInterest = 'all';
+  let selectedOrg = 'all';
+
+  const selectButton = (buttons: HTMLButtonElement[], selected: HTMLButtonElement) => {
+    buttons.forEach((button) => { const active = button === selected; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+  };
+  const applyFilters = () => {
+    let visible = 0;
+    cards.forEach((card) => {
+      const hits = JSON.parse(card.dataset.hits ?? '[]') as string[];
+      const matchesInterest = selectedInterest === 'all' || hits.includes(selectedInterest);
+      const matchesOrg = selectedOrg === 'all' || card.dataset.org === selectedOrg;
+      const show = matchesInterest && matchesOrg;
+      card.hidden = !show;
+      if (show) visible += 1;
+    });
+    if (count) count.textContent = String(visible);
+    if (empty) empty.hidden = visible !== 0;
+  };
+
+  interestButtons.forEach((button) => button.addEventListener('click', () => {
+    selectedInterest = button.dataset.interest ?? 'all';
+    selectButton(interestButtons, button);
+    applyFilters();
+  }));
+  orgButtons.forEach((button) => button.addEventListener('click', () => {
+    selectedOrg = button.dataset.orgFilter ?? 'all';
+    selectButton(orgButtons, button);
+    applyFilters();
+  }));
+</script>
+
 <style>
-  .recommend {
-    max-width: 64rem;
-    padding-block: clamp(2rem, 6vw, 5rem) 0;
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 2rem; padding-block: clamp(3rem, 9vw, 8rem) clamp(4rem, 9vw, 7rem); }
+  .eyebrow { margin-bottom: .75rem; color: var(--accent); font-family: var(--font-mono); font-size: .75rem; letter-spacing: .15em; }
+  h1 { max-width: 16ch; font-size: clamp(3rem, 8vw, 6.75rem); line-height: .98; letter-spacing: -.055em; }
+  .lede { max-width: 40rem; margin-top: 1.5rem; color: var(--muted); font-size: clamp(1rem, 2vw, 1.125rem); line-height: 1.75; }
+  .issue-button { display: inline-flex; align-items: center; gap: 2.5rem; min-height: 3.25rem; padding: .85rem 1.25rem; border-radius: 999px; background: var(--fg); color: var(--bg); font-family: var(--font-ko-bold); white-space: nowrap; }
+  .section { padding-block: clamp(4rem, 9vw, 7rem); }
+  .section--tint { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+  .section-head { display: flex; align-items: end; justify-content: space-between; gap: 2rem; margin-bottom: 2rem; }
+  h2 { font-size: clamp(2rem, 5vw, 3.75rem); line-height: 1.05; letter-spacing: -.04em; }
+  .section-copy { max-width: 40rem; margin-top: .75rem; color: var(--muted); line-height: 1.65; }
+  .section-link, .detail-link { color: var(--accent); white-space: nowrap; }
+  .empty { padding: 3rem 0; color: var(--muted); }
+  .next-list { display: grid; gap: 1rem; }
+  .next-card, .match-card { border: 1px solid color-mix(in srgb, var(--muted) 28%, transparent); border-radius: 1.5rem; background: color-mix(in srgb, var(--bg) 94%, var(--fg)); }
+  .next-card { padding: clamp(1.25rem, 3vw, 2rem); }
+  .next-card__head { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1.75rem; }
+  h3 { font-size: clamp(1.125rem, 2.5vw, 1.5rem); line-height: 1.35; }
+  h3 a:hover { text-decoration: underline; text-underline-offset: .2em; }
+  .learning-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; gap: 1rem; }
+  .flow-step { min-width: 0; padding: 1rem; border-radius: 1rem; background: color-mix(in srgb, var(--fg) 4%, transparent); }
+  .flow-step--accent { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .flow-step p { margin-bottom: .75rem; color: var(--muted); font-size: .75rem; }
+  .flow-step p span { margin-right: .35rem; color: var(--accent); font-family: var(--font-mono); }
+  .flow-step ul { display: grid; gap: .45rem; margin: 0; padding-left: 1rem; font-size: .875rem; line-height: 1.45; }
+  .flow-arrow { align-self: center; color: var(--accent); }
+  .grounding, .sources { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: 1.25rem; font-size: .8125rem; }
+  .grounding > span, .sources > span { color: var(--muted); }
+  .grounding a, .sources a { padding: .25rem .625rem; border: 1px solid color-mix(in srgb, var(--muted) 28%, transparent); border-radius: 999px; }
+  .match-grid, .lab-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
+  .match-card { display: flex; flex-direction: column; min-width: 0; padding: clamp(1.25rem, 3vw, 1.75rem); }
+  .match-card__meta { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; color: var(--accent); font-size: .75rem; }
+  .match-card__meta strong { font-family: var(--font-mono); font-size: 1.5rem; }
+  .match-card__meta small { color: var(--muted); font-size: .6875rem; }
+  .match-card__reason { margin-top: 1rem; line-height: 1.65; }
+  .sources { align-items: start; }
+  .sources > span { flex-basis: 100%; }
+  .match-card__detail { align-self: flex-end; margin-top: auto; padding-top: 1.5rem; font-size: .875rem; }
+  .section-head--labs { align-items: end; }
+  .lab-count { color: var(--muted); white-space: nowrap; }
+  .lab-count strong { color: var(--fg); font-family: var(--font-mono); font-size: 1.5rem; }
+  .explorer-filters { display: grid; gap: .75rem; margin-bottom: 1.5rem; }
+  .filter-group > p { margin-bottom: .5rem; color: var(--muted); font-size: .75rem; }
+  .interest-filter { display: flex; gap: .5rem; margin-bottom: 1.5rem; overflow-x: auto; scrollbar-width: thin; }
+  .filter-group .interest-filter { margin-bottom: 0; }
+  .interest-filter button { flex: 0 0 auto; padding: .55rem .9rem; border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: .875rem; }
+  .interest-filter button.active { border-color: var(--fg); background: var(--fg); color: var(--bg); }
+  .filter-empty { padding-block: 1.5rem; }
+  @media (max-width: 760px) {
+    .hero { grid-template-columns: 1fr; align-items: start; }
+    .issue-button { justify-self: start; }
+    .section-head { align-items: start; flex-direction: column; gap: 1rem; }
+    .learning-flow { grid-template-columns: 1fr; }
+    .flow-arrow { justify-self: center; transform: rotate(90deg); }
   }
-
-  h1 {
-    margin-bottom: 1rem;
-    font-size: clamp(2.75rem, 8vw, 5rem);
-    letter-spacing: -0.045em;
-  }
-
-  .lede {
-    margin-bottom: 1.5rem;
-    color: var(--muted);
-  }
-
-  .actions {
-    display: flex;
-    margin-bottom: clamp(2rem, 5vw, 3rem);
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  .action {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2.75rem;
-    padding: 0 1.125rem;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
-    font-size: 0.9375rem;
-    transition:
-      transform 100ms ease-out,
-      background-color 150ms ease-out,
-      border-color 150ms ease-out;
-  }
-  .action:hover {
-    border-color: color-mix(in srgb, var(--fg) 40%, transparent);
-  }
-  .action.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-    font-family: var(--font-ko-bold);
-  }
-  .action:active {
-    transform: scale(0.97);
-  }
-  .plus {
-    margin-right: 0.3em;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .action:active {
-      transform: none;
-    }
+  @media (prefers-reduced-motion: no-preference) {
+    .issue-button, .interest-filter button, .next-card, .match-card { transition: transform 160ms ease-out, border-color 160ms ease-out, background-color 160ms ease-out; }
+    .issue-button:hover, .next-card:hover, .match-card:hover { transform: translateY(-2px); }
   }
 </style>
