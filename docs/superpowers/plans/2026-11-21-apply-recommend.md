@@ -66,7 +66,9 @@
 - `type Opening = { id: string; kind: OpeningKind; org: string; title: string; url: string; verified: boolean; target?: string; eligibility?: string; start?: Date; deadline?: Date; tags: string[]; lab?: string }`
 - `openingStatus(o: Opening, now: Date): 'open' | 'closed' | 'unverified'`
 - `fromIntern(i: Intern): Opening` (`data/interns.json` 한 건 → `company-intern`. `id`는 `intern-<INT-id>`)
-- `loadOpenings(collection: CollectionEntry<'openings'>[], interns: Intern[]): Opening[]` (마감일 오름차순, 마감일 없는 건 뒤로)
+- `fromResearchProgram(p: ResearchProgram): Opening` (`data/research-internships.json` `programs` 한 건 → `lab-intern`. `id`는 `rp-<id>`, `verified`는 `deadline`이 있을 때만 true, `target`은 `crossSchool`과 `eligibility`, `start`는 `YYYY-MM`이면 그 달 1일)
+- `type ResearchProgram`, `type ResearchTopic`은 `research-internships.json`의 필드 그대로다(`deadline?`, `deadlineText?` 등 선택 필드는 없을 수 있다)
+- `loadOpenings(collection: CollectionEntry<'openings'>[], interns: Intern[], programs: ResearchProgram[]): Opening[]` (마감일 오름차순, 마감일 없는 건 뒤로)
 - `essaySchema`에 `materials: {entry: string, reason: string, draft: string}[] default []`, `checks: string[] default []` 추가
 - `nextSchema`에 `actions: string[] default []`(바로 해볼 공부) 추가
 
@@ -75,6 +77,7 @@
   - `deadline<now`이면 `closed`(verified와 관계없이)
   - deadline 없음, `verified:false`, start 미래이면 `unverified`
   - `fromIntern`이 `INT-0016` 예시를 `company-intern`으로 매핑하고 `eligibility`를 옮김
+  - `fromResearchProgram`이 `RP26-001`(POSTECH 기계공학과 동계 연구인턴, 마감 2026-11-22)을 `lab-intern`·`verified: true`로 매핑하고, 마감일이 없는 공고는 `verified: false`로 매핑함
   - `loadOpenings`의 정렬
 - [ ] 실패를 확인한 뒤 구현하고 통과시킨다. 샘플 essay에 `materials`(공개 항목 ID 2개, 각 초안) 하나와 `checks`를, 샘플 next에 `actions`를 채운다.
 - [ ] `CLAUDE.md` 콘텐츠 형식 표에 `content/openings/<slug>.md` 줄과 essay `materials`·`checks`, next `actions`를 추가한다(Task 8 소유 파일이지만 스키마와 같이 바뀌어야 하므로 이 Task에 둔다).
@@ -140,6 +143,8 @@
 
 **Consumes:** Task 14 `/recommend` 뼈대, Task 15 `loadOpenings`·`openingStatus`·next `actions`
 
+- [ ] 연구실 탐색 대상은 DGIST `labs.json`과 `research-internships.json` `topics`(타 기관, 연구실·교수·주제·분야·원문 링크)다. 기관 필터(DGIST / 그 외 기관명)를 둔다.
+- [ ] `matchTopics(topics: ResearchTopic[], interests: string[])`도 `matchLabs`와 같은 규칙으로 `topic`·`category`·`lab`·`division`을 본다.
 - [ ] `matchLabs(labs: Lab[], interests: string[]): { lab: Lab; hits: string[] }[]`
   - `summary`·`internTopics`·`dept`에서 관심사 키워드가 맞은 주제를 `hits`로 돌려준다.
   - hits 수 내림차순으로 정렬한다.

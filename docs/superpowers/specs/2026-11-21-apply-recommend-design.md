@@ -17,7 +17,11 @@
 - 유형 4개를 탭으로 나눈다: 대학원 연구실 인턴(`lab-intern`), 연구과제 학부연구생(`undergrad-research`), 기업 인턴(`company-intern`), 기업 채용(`company-job`).
 - 카드에는 기관·제목, 모집 대상, 자격 요건, 마감일, 원본 공고 링크를 보인다.
 - 상태는 `모집 중`, `마감`, `확인 필요` 셋 중 하나다. 원문에서 접수 기간을 확인한 공고(`verified: true`)만, 빌드 시점이 기간 안일 때 `모집 중`이 된다. 마감일이 지난 공고는 빌드할 때 자동으로 `마감`이 된다.
-- 데이터는 두 곳을 합친다. 하나는 `content/openings/<slug>.md`이고, 다른 하나는 `data/interns.json` 121건이다(모두 `company-intern`으로 매핑한다).
+- 데이터는 세 곳을 합친다.
+  - `content/openings/<slug>.md`
+  - `data/interns.json` 121건(모두 `company-intern`)
+  - `data/research-internships.json`의 `programs` 51건(대학원·출연연 연구 인턴, 모두 `lab-intern`)
+  - `research-internships.json`은 사용자가 준 스냅샷(2026-11-21)이다. `deadline`이 날짜로 있는 공고만 `verified: true`로 보고, 날짜가 없으면 `deadlineText`를 보인다.
 - 연구실·기업 DB(`data/labs.json`, `data/interns.json`)는 기관과 분야를 찾는 데 쓴다.
 - 수집은 두 경로로 한다.
   - **[공고 추가] 이슈**(`opening` 라벨): URL을 올리면 AI가 원문을 읽고 정리한다.
@@ -37,7 +41,7 @@
 
 ## RECOMMEND (`/recommend`, 메뉴 RECOMMEND)
 
-- **연구실 탐색**: `labs.json` 157곳을 `profile.yml`의 `interests`와 빌드 시점 키워드로 맞춰 보인다. 맞은 연구 주제를 강조하고, 모집 여부와 관계없이 탐색할 수 있다. 그 연구실의 열린 공고가 있으면 Apply의 해당 공고로 링크한다.
+- **연구실 탐색**: `labs.json` 157곳(DGIST)과 `research-internships.json`의 `topics` 365건(KAIST·POSTECH·서울대·ETRI 등 21개 기관의 연구실별 인턴 주제)을 `profile.yml`의 `interests`와 빌드 시점 키워드로 맞춰 보인다. 맞은 연구 주제를 강조하고, 모집 여부와 관계없이 탐색할 수 있다. 그 연구실의 열린 공고가 있으면 Apply의 해당 공고로 링크한다.
 - **AI 추천 카드**: 기존 `matches`다. 맞는 연구 주제, 먼저 읽을 자료(`sources`), 근거 기록을 보인다.
 - **다음 공부 미리보기**: 기존 `next`다. 이미 공부한 내용(`learned`) → 다음에 배울 개념(`next`) → 바로 해볼 공부·탐구 질문(`actions`, `questions`) 순서로 보인다.
 - **[추천 받기]**: `recommend` 이슈를 연다.
