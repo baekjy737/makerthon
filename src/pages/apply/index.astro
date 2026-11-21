@@ -4,7 +4,7 @@ import Base from '../../layouts/Base.astro';
 import OpeningCard from '../../components/OpeningCard.astro';
 import { boardGroups } from '../../lib/board';
 import { interns } from '../../lib/data';
-import { issueUrl, type IssueLabel } from '../../lib/issue';
+import { issueUrl } from '../../lib/issue';
 import { loadOpenings } from '../../lib/openings';
 import { loadProfile } from '../../lib/profile';
 import { withBase } from '../../lib/url';
@@ -32,10 +32,9 @@ const actions = [
   {
     label: '공고 추가',
     url: issueUrl(profile.repo, {
-      // 'opening' 라벨은 Task 16(공고 수집 AI)이 IssueLabel과 이슈 템플릿에 추가한다
-      label: 'opening' as IssueLabel,
+      label: 'opening',
       title: '[공고] ',
-      body: '### 공고 링크\n\n(모집 공고 주소를 적어 주세요. AI가 원문을 읽고 기관·모집 대상·자격 요건·접수 기간을 정리해요.)\n\n### 메모\n\n(관심 있는 이유나 확인하고 싶은 점이 있으면 적어 주세요.)\n',
+      body: '### 공고 URL\n\n(모집 공고 주소를 적어 주세요. AI가 원문을 읽고 기관·모집 대상·자격 요건·접수 기간을 정리해요.)\n\n### 공고 유형\n\n(대학원 연구실 인턴 / 연구과제 학부연구생 / 기업 인턴 / 기업 채용 중 하나. 모르면 비워 두세요.)\n\n### 메모\n\n(관심 있는 이유나 확인하고 싶은 점이 있으면 적어 주세요.)\n',
     }),
   },
   {
@@ -43,7 +42,7 @@ const actions = [
     url: issueUrl(profile.repo, {
       label: 'essay',
       title: '[자소서] ',
-      body: '### 지원처\n\n(회사나 기관 이름과 직무)\n\n### 자소서 문항\n\n(문항 원문을 붙여 넣거나, 지원서 양식 파일(PDF·이미지)을 이 칸에 끌어다 놓아 주세요.)\n\n### 글자 수 제한\n\n(공백 포함 최대 글자 수. 없으면 비워 두세요.)\n',
+      body: '### 지원처\n\n(회사나 기관 이름과 직무)\n\n### 지원서 양식 파일(PDF·이미지) 또는 문항 원문\n\n(문항 원문을 붙여 넣거나, 지원서 양식 파일(PDF·이미지)을 이 칸에 끌어다 놓아 주세요.)\n\n### 공통 글자 수 제한 (선택)\n\n(공백 포함 최대 글자 수. 없으면 비워 두세요.)\n',
     }),
   },
 ];
