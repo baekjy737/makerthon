@@ -31,7 +31,6 @@ const isCurrent = (href: string) => {
         ))}
       </ul>
     </nav>
-    <a class="manage-link" href={withBase('/manage')} aria-current={isCurrent('/manage') ? 'page' : undefined}>관리</a>
   </div>
 </header>
 
@@ -117,20 +116,10 @@ const isCurrent = (href: string) => {
     font: 700 0.8rem var(--font-mono);
   }
 
-  .manage-link {
-    justify-self: end;
-    font-size: 0.8rem;
-    white-space: nowrap;
-  }
-
-  .manage-link[aria-current='page'] {
-    text-decoration: underline;
-    text-underline-offset: 0.25em;
-  }
-
   @media (max-width: 42rem) {
     .nav-inner {
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: center;
     }
 
     .monogram {
